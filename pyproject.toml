@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipmap"
+version = "0.1.0"
+description = "IP address space visualization (pcap, geofeed, MaxMind)"
+authors = [
+    { name = "Your Name", email = "you@example.com" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "plotly",
+    "typer[all]",
+    "geoip2",      # or maxminddb, depending on your loader
+    "scapy",       # for pcap, or pyshark instead
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "mypy",
+]
+
+[project.scripts]
+# This creates an `ipmap` command in the user's PATH
+ipmap = "ipmap.cli:main"

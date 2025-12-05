@@ -1,0 +1,6 @@
+*.html
+GeoLite2-City-CSV*
+*egg-info
+rir-data/
+.idea
+*__pycache__/
