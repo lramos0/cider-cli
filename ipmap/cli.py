@@ -127,6 +127,11 @@ def map(
             "-c",
             help="Colorscale for categorical primary mode: default | neon",
         ),
+        nested: bool = typer.Option(
+            False,
+            "--nested",
+            help="Enable nested drill-down: generate /24 HTMLs per /16 and make /16 cells clickable.",
+        ),
         pcap_direction: str = typer.Option(
             "both",
             "--pcap-direction",
@@ -174,44 +179,97 @@ def map(
 
     # 3) bucket + stats depending on view
     if view == "/16":
-        buckets = bucket_16(df, ip_col="ip", org_col="org", extra_group_cols=["source", "snapshot_date"])
-        buckets = attach_primary_and_counts(buckets, orgs_col="orgs", primary_col="primary_org", count_col="num_countries")
+        buckets_16 = bucket_16(
+            df,
+            ip_col="ip",
+            org_col="org",
+            extra_group_cols=["source", "snapshot_date"],
+        )
+        buckets_16 = attach_primary_and_counts(
+            buckets_16,
+            orgs_col="orgs",
+            primary_col="primary_org",
+            count_col="num_countries",
+        )
+
+        # If nested, also compute /24 buckets once here
+        buckets_24 = None
+        if nested:
+
+            buckets_24 = bucket_24(
+                df,
+                ip_col="ip",
+                org_col="org",
+                extra_group_cols=["source", "snapshot_date"],
+            )
+            buckets_24 = attach_primary_and_counts(
+                buckets_24,
+                orgs_col="orgs",
+                primary_col="primary_org",
+                count_col="num_countries",
+            )
+
+        from ipmap.viz.heatmap import build_16_heatmap, build_24_heatmap
+        from ipmap.viz.export import save_html, save_html_nested_16, save_html_with_backlink
+
         fig = build_16_heatmap(
-            buckets,
+            buckets_16,
             mode=mode,
             colorscale_mode=colorscale_mode,
             title=f"IPv4 /16 Address Space – {kind} (view={view})",
         )
-    elif view in ("/24", "/32"):
-        # You *are* computing /24 and /32 buckets in the library, but
-        # we haven't built static CLI visualizations for them yet.
-        if view == "/24":
-            _ = bucket_24(df, ip_col="ip", org_col="org", extra_group_cols=["source", "snapshot_date"])
-        else:
-            _ = bucket_32(df, ip_col="ip", org_col="org", extra_group_cols=["source", "snapshot_date"])
 
-        msg = (
-            f"View {view} is not yet supported for static CLI visualization.\n"
-            "You can still experiment with /24 and /32 interactively in your notebook."
-        )
-        typer.echo(msg, err=True)
-        raise typer.Exit(code=2)
-    else:
-        raise typer.BadParameter(f"Unsupported view: {view}")
+        # 4) export
+        output = output.expanduser().resolve()
+        if output_format != "html":
+            # keep existing PNG behavior, nested doesn’t apply
+            if output.suffix.lower() != ".png":
+                output = output.with_suffix(".png")
+            save_png(fig, output)
+            typer.echo(f"Wrote visualization to {output}")
+            return
 
-    # 4) export
-    output = output.expanduser().resolve()
-    if output_format == "html":
-        # ensure .html extension if not specified
+        # HTML export, with optional nested behaviour
+        if not nested:
+            # old behaviour
+            if output.suffix.lower() not in (".html", ".htm"):
+                output = output.with_suffix(".html")
+            save_html(fig, output)
+            typer.echo(f"Wrote visualization to {output}")
+            return
+
+        # --- NESTED MODE ---
+        # 1) save top-level /16 HTML with click handler
         if output.suffix.lower() not in (".html", ".htm"):
             output = output.with_suffix(".html")
-        save_html(fig, output)
-    else:  # png
-        if output.suffix.lower() != ".png":
-            output = output.with_suffix(".png")
-        save_png(fig, output)
 
-    typer.echo(f"Wrote visualization to {output}")
+        save_html_nested_16(
+            fig,
+            output,
+            nested_basename=output.stem,
+        )
+
+        # 2) generate one /24 HTML per populated /16
+        if buckets_24 is not None and not buckets_24.empty:
+            for (bx, by), sub in buckets_24.groupby(["bucket16_x", "bucket16_y"]):
+                # build /24 figure for this /16
+                fig24 = build_24_heatmap(
+                    sub,
+                    mode=mode,
+                    colorscale_mode=colorscale_mode,
+                    title=f"/24s under {bx}.{by}.0.0/16",
+                    parent_label=f"{bx}.{by}.0.0/16",
+                )
+                out_24 = output.with_name(f"{output.stem}_16_{bx}_{by}.html")
+                # include backlink to main /16 file (relative)
+                save_html_with_backlink(
+                    fig24,
+                    out_24,
+                    back_href=output.name,
+                )
+
+        typer.echo(f"Wrote nested /16 + /24 visualizations to {output}")
+        return
 
 
 def main() -> None:
