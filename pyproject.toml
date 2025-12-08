@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ipmap"
+name = "cider-cli"
 version = "0.1.0"
 description = "IP address space visualization (pcap, geofeed, MaxMind)"
 authors = [
@@ -29,4 +29,4 @@ dev = [
 
 [project.scripts]
 # This creates an `ipmap` command in the user's PATH
-ipmap = "ipmap.cli:main"
+cider = "ipmap.cli:main"
