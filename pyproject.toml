@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cider-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "IP address space visualization (pcap, geofeed, MaxMind)"
 authors = [
     { name = "Logan Ramos", email = "loganramos00@gmail.com" }
