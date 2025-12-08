@@ -1,5 +1,8 @@
 # cider-cli
 Cider-cli is a cli tool for producing CIDR maps, also known as "ip census maps", "ip maps", or "address space maps".
+![example--map](documentation/example-map.png "Powerful graphs at the palms of your hand.")
+
+![example-grouped-map](documentation/example-grouped-map.png "The goal is to solve and visualize complexities in address spaces.")
 
 ## Installation
 Cider-cli is currently an unpublished tool, but for beta testing purposes you can install via:
