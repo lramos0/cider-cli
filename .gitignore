@@ -3,4 +3,9 @@ GeoLite2-City-CSV*
 *egg-info
 rir-data/
 .idea
-*__pycache__/
+*__pycache__/.DS_Store
+*.pcap
+*.pptx
+*.csv
+~
+
