@@ -8,7 +8,7 @@ exclude = ["cache*"]
 
 [project]
 name = "cider-cli"
-version = "0.1.3"
+version = "0.1.4"
 description = "IP address space visualization (pcap, geofeed, MaxMind)"
 authors = [
     { name = "Logan Ramos", email = "loganramos00@gmail.com" }

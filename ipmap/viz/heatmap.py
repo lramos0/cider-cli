@@ -193,7 +193,7 @@ def build_24_heatmap(
         z_init = z_primary
         colorscale_init = primary_colorscale_default
         zmin_init = 0
-        zmax_init = max(org_code_map.values()) if org_code_map else 1
+        zmax_init = max(max(org_code_map.values()) if org_code_map else 0, 1)
         hover_init = (
             "Bucket: %{text}<br>"
             "Primary org index: %{z}<extra></extra>"
@@ -299,26 +299,23 @@ def build_24_heatmap(
         "Bucket: %{text}<br>"
         "Primary org index: %{z}<extra></extra>"
     )
-    hover_country = (
-        "Bucket: %{text}<br>"
-        "# unique orgs: %{z}<extra></extra>"
-    )
-    hover_records = (
-        "Bucket: %{text}<br>"
-        "# prefixes: %{z}<extra></extra>"
-    )
+    hover_country = "Bucket: %{text}.0/24<br># unique orgs: %{z}<extra></extra>"
+    hover_records = "Bucket: %{text}.0/24<br># prefixes: %{z}<extra></extra>"
+
 
     fig.update_layout(
         updatemenus=[
             dict(
                 type="buttons",
-                direction="left",
+                direction="down",          # ← STACK VERTICALLY
                 x=0.0,
-                y=1.02,
+                y=-0.15,
                 xanchor="left",
-                yanchor="bottom",
-                pad=dict(r=10, t=0),
-                font=dict(size=10),
+                yanchor="top",             # ← important for vertical stacking
+                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
+                bordercolor="rgba(255,255,255,0.2)",
+                pad=dict(r=0, t=4),
+                font=dict(size=8),
                 buttons=[
                     dict(
                         label="Primary (categorical)",
@@ -327,7 +324,7 @@ def build_24_heatmap(
                             "z": [z_primary],
                             "colorscale": [primary_colorscale_default],
                             "zmin": [0],
-                            "zmax": [max(org_code_map.values()) if org_code_map else 1],
+                            "zmax": [max(max(org_code_map.values()) if org_code_map else 0, 1)],
                             "hovertemplate": [hover_primary],
                             "colorbar": [dict(title="Org index")],
                         }],
@@ -360,13 +357,15 @@ def build_24_heatmap(
             ),
             dict(
                 type="buttons",
-                direction="left",
+                direction="down",          # ← STACK VERTICALLY
                 x=0.55,
-                y=1.02,
+                y=-0.15,
                 xanchor="left",
-                yanchor="bottom",
-                pad=dict(r=10, t=0),
-                font=dict(size=10),
+                yanchor="top",
+                pad=dict(r=0, t=4),
+                font=dict(size=8),
+                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
+                bordercolor="rgba(255,255,255,0.2)",
                 buttons=[
                     dict(
                         label="Colors: default",
@@ -382,6 +381,7 @@ def build_24_heatmap(
             ),
         ]
     )
+
 
     log.debug("Finished building /24 heatmap figure for %s", parent_label)
     return fig
@@ -517,7 +517,7 @@ def build_16_heatmap(
         zmax_init = max(org_code_map.values()) if org_code_map else 1
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "Primary org index: %{z}<extra></extra>"
+            "BehaviorType: %{customdata}<extra></extra>"
         )
         colorbar_title_init = "Org index"
 
@@ -532,7 +532,7 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "# unique orgs: %{z}<extra></extra>"
+            "BehaviorType: %{customdata}<extra></extra>"
         )
         colorbar_title_init = "# orgs"
 
@@ -547,22 +547,31 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "# prefixes: %{z}<extra></extra>"
+            "BehaviorType: %{customdata}<extra></extra>"
         )
         colorbar_title_init = "# prefixes"
 
     # ------------------------------------------------------------------
     # 5) Build initial Heatmap trace
     # ------------------------------------------------------------------
+    # Build a grid of behaviorType labels parallel to z_primary
+    label_grid = [[None for _ in x_vals] for _ in y_vals]
+
+    for _, row in df_buckets_16.iterrows():
+        bx = int(row["bucket_x"])
+        by = int(row["bucket_y"])
+        label_grid[y_to_idx[by]][x_to_idx[bx]] = row["primary_org"]
+
     heatmap = go.Heatmap(
         z=z_init,
         x=x_vals,
         y=y_vals,
+        customdata=label_grid,
+        hovertemplate=hover_init,
         colorscale=colorscale_init,
         zmin=zmin_init,
         zmax=zmax_init,
-        hovertemplate=hover_init,
-        colorbar=dict(title=colorbar_title_init),
+        colorbar=dict(title="BehaviorType"),
     )
 
     fig_title = title or "IPv4 /16 Address Space"
@@ -630,11 +639,13 @@ def build_16_heatmap(
                 type="buttons",
                 direction="left",
                 x=0.0,
-                y=1.02,
+                y=-0.15,
                 xanchor="left",
                 yanchor="bottom",
                 pad=dict(r=10, t=0),
                 font=dict(size=10),
+                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
+                bordercolor="rgba(255,255,255,0.2)",
                 buttons=[
                     dict(
                         label="Primary (categorical)",
@@ -688,11 +699,13 @@ def build_16_heatmap(
                 type="buttons",
                 direction="left",
                 x=0.55,
-                y=1.02,
+                y=-0.15,
                 xanchor="left",
                 yanchor="bottom",
                 pad=dict(r=10, t=0),
                 font=dict(size=10),
+                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
+                bordercolor="rgba(255,255,255,0.2)",
                 buttons=[
                     dict(
                         label="Colors: default",

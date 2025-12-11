@@ -16,7 +16,7 @@ from ipmap.processing.normalize import normalize_dataframe
 from ipmap.processing.bucket import bucket_16, bucket_24, bucket_32
 from ipmap.processing.stats import attach_primary_and_counts
 from ipmap.viz.heatmap import build_16_heatmap
-from ipmap.viz.export import save_html, save_png
+from ipmap.viz.export import save_html, save_png, save_html_with_whois_on_click
 from ipmap.utils.logging import get_logger
 
 app = typer.Typer(help="IPv4 address space visualization (pcap, geofeed CSV, MaxMind CSV).")
@@ -36,6 +36,8 @@ def _load_dataframe(
         snapshot_date: Optional[str],
         pcap_direction: str,
         pcap_sample_rate: int,
+        cider_group_col: Optional[str] = None,
+        cider_group_explode: bool = False,
 ) -> pd.DataFrame:
     """
     Internal helper to instantiate the right DataSource,
@@ -65,11 +67,10 @@ def _load_dataframe(
         ds = CiderCsvSource(
             path=input_path,
             snapshot_date=snapshot_date,
-            # Optionally override org_col here if you want by default:
-            # org_col="region",
+            org_col=cider_group_col or "countryCode",
+            explode_org=cider_group_explode,
         )
     else:
-        # typer should prevent this, but just in case:
         raise typer.BadParameter(f"Unsupported kind: {kind}")
 
     df = datasource_to_dataframe(ds)
@@ -150,6 +151,34 @@ def map(
             "--pcap-sample-rate",
             help="For kind=pcap, use every Nth packet (1 = use all).",
         ),
+        cider_group_col: Optional[str] = typer.Option(
+            None,
+            "--cider-group-col",
+            help=(
+                    "For kind=cider: which CSV column to use as the grouping key (stored as 'org'). "
+                    "Examples: countryCode, region, behaviorType, decisionSource, behaviorTypes, etc."
+            ),
+        ),
+        cider_group_explode: bool = typer.Option(
+            False,
+            "--cider-group-explode",
+            help=(
+                    "For kind=cider: if the group column contains a JSON list (e.g. behaviorTypes), "
+                    "emit one record per value."
+            ),
+        ),
+        whois_on_click: bool = typer.Option(
+            True,
+            "--whois-on-click/--no-whois-on-click",
+            help="In HTML output, clicking a /16 cell opens a WHOIS/RDAP lookup in a new tab.",
+        ),
+        whois_provider: str = typer.Option(
+            "rdap_org",
+            "--whois-provider",
+            help='WHOIS provider for click-to-whois: "rdap_org" (recommended) or "arin".',
+        ),
+
+
 ):
     """
     Build an IP map visualization from a pcap, geofeed CSV, or MaxMind CSV snapshot.
@@ -167,6 +196,8 @@ def map(
         snapshot_date=snapshot_date,
         pcap_direction=pcap_direction,
         pcap_sample_rate=pcap_sample_rate,
+        cider_group_col=cider_group_col,
+        cider_group_explode=cider_group_explode,
     )
 
     if df.empty:
@@ -218,7 +249,7 @@ def map(
             )
 
         from ipmap.viz.heatmap import build_16_heatmap, build_24_heatmap
-        from ipmap.viz.export import save_html, save_html_nested_16, save_html_with_backlink
+        from ipmap.viz.export import save_html, save_html_nested_16, save_html_with_backlink_and_whois
 
         fig = build_16_heatmap(
             buckets_16,
@@ -239,14 +270,19 @@ def map(
 
         # HTML export, with optional nested behaviour
         if not nested:
-            # old behaviour
             if output.suffix.lower() not in (".html", ".htm"):
                 output = output.with_suffix(".html")
-            save_html(fig, output)
+
+            if whois_on_click:
+                save_html_with_whois_on_click(fig, output, provider=whois_provider)
+            else:
+                save_html(fig, output)
+
             typer.echo(f"Wrote visualization to {output}")
             return
 
-        # --- NESTED MODE ---
+
+    # --- NESTED MODE ---
         # 1) save top-level /16 HTML with click handler
         if output.suffix.lower() not in (".html", ".htm"):
             output = output.with_suffix(".html")
@@ -270,10 +306,13 @@ def map(
                 )
                 out_24 = output.with_name(f"{output.stem}_16_{bx}_{by}.html")
                 # include backlink to main /16 file (relative)
-                save_html_with_backlink(
+                parent_cidr = f"{bx}.{by}.0.0/16"
+                save_html_with_backlink_and_whois(
                     fig24,
                     out_24,
                     back_href=output.name,
+                    parent_cidr=parent_cidr,          # <<< important
+                    update_panel_on_click=True,       # /24 click updates panel (set False to pin to /16)
                 )
 
         typer.echo(f"Wrote nested /16 + /24 visualizations to {output}")
