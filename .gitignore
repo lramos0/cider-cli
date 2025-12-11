@@ -8,4 +8,5 @@ rir-data/
 *.pptx
 *.csv
 ~
-
+*__pycache__*
+*DS_STORE*
