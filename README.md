@@ -1,4 +1,6 @@
 # cider-cli
+https://pypi.org/project/cider-cli/
+
 Cider-cli is a cli tool for producing CIDR maps, also known as "ip census maps", "ip maps", or "address space maps". These are very powerful graphs in your developer tool kit for understanding network traffic and visualizing address space in an organized fashion:
 ![example-map](https://raw.githubusercontent.com/lramos0/cider-cli/refs/heads/main/documentation/images/example-map.png )
 The goal is to solve and visualize complexities in address spaces, trends which may be clearer simply with a little color:
@@ -93,3 +95,7 @@ Every visualization is an interactive Plotly map with:
 3. Responsive scaling
 
 4. Exportable HTML or PNG
+
+## Further Reading
+
+You can find more details about this project on my official website [Logan Ramos](https://loganramos.com/components/cider-cli)
