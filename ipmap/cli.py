@@ -11,6 +11,7 @@ from ipmap.datasources.base import datasource_to_dataframe
 from ipmap.datasources.geofeed_csv import GeofeedCsvSource
 from ipmap.datasources.maxminddb_source import MaxMindCsvSource
 from ipmap.datasources.pcap import PcapSource
+from ipmap.datasources.cider_csv import CiderCsvSource
 from ipmap.processing.normalize import normalize_dataframe
 from ipmap.processing.bucket import bucket_16, bucket_24, bucket_32
 from ipmap.processing.stats import attach_primary_and_counts
@@ -23,7 +24,7 @@ app = typer.Typer(help="IPv4 address space visualization (pcap, geofeed CSV, Max
 log = get_logger(__name__)
 
 ViewType = Literal["/16", "/24", "/32"]
-KindType = Literal["geofeed", "maxmind", "pcap"]
+KindType = Literal["geofeed", "maxmind", "pcap", "cider"]
 ModeType = Literal["primary", "country_count", "record_count"]
 ColorscaleType = Literal["default", "neon"]
 OutputFormat = Literal["html", "png"]
@@ -60,6 +61,13 @@ def _load_dataframe(
             sample_rate=pcap_sample_rate,
             snapshot_date=snapshot_date,
         )
+    elif kind == "cider":
+        ds = CiderCsvSource(
+            path=input_path,
+            snapshot_date=snapshot_date,
+            # Optionally override org_col here if you want by default:
+            # org_col="region",
+        )
     else:
         # typer should prevent this, but just in case:
         raise typer.BadParameter(f"Unsupported kind: {kind}")
@@ -84,7 +92,7 @@ def map(
             ...,
             "--kind",
             "-k",
-            help="Type of input: geofeed | maxmind | pcap",
+            help="Type of input: geofeed | maxmind | pcap | cider",
         ),
         view: ViewType = typer.Option(
             "/16",

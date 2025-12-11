@@ -173,6 +173,15 @@ def build_24_heatmap(
         # record_count (num_prefixes)
         z_records[yi][xi] = int(row["num_prefixes"])
 
+    # ------------------------------------------------------------------
+    # 3b) Precompute max values for count modes (ignoring empty cells)
+    # ------------------------------------------------------------------
+    vals_country = [v for row in z_country for v in row if v is not None]
+    max_country = max(vals_country) if vals_country else 0
+
+    vals_records = [v for row in z_records for v in row if v is not None]
+    max_records = max(vals_records) if vals_records else 0
+
     # --------------------------------------------------------------
     # 4) Choose initial mode
     # --------------------------------------------------------------
@@ -194,21 +203,20 @@ def build_24_heatmap(
         z_init = z_country
         colorscale_init = COUNT_COLORSCALE
         zmin_init = 0
-        max_val = max(v for row in z_country for v in row if v is not None)
-        zmax_init = max(min(max_val, MAX_COUNT_FOR_COLOR), 1)
+        zmax_init = max(min(max_country, MAX_COUNT_FOR_COLOR), 1)
         hover_init = (
-            "Bucket: %{text}<br>"
+            "Bucket: %{x}.%{y}.0.0/16<br>"
             "# unique orgs: %{z}<extra></extra>"
         )
         colorbar_title_init = "# orgs"
+
     else:  # record_count
         z_init = z_records
         colorscale_init = COUNT_COLORSCALE
         zmin_init = 0
-        max_val = max(v for row in z_records for v in row if v is not None)
-        zmax_init = max(max_val, 1)
+        zmax_init = max(max_records, 1)
         hover_init = (
-            "Bucket: %{text}<br>"
+            "Bucket: %{x}.%{y}.0.0/16<br>"
             "# prefixes: %{z}<extra></extra>"
         )
         colorbar_title_init = "# prefixes"
@@ -331,13 +339,7 @@ def build_24_heatmap(
                             "z": [z_country],
                             "colorscale": [COUNT_COLORSCALE],
                             "zmin": [0],
-                            "zmax": [max(
-                                min(
-                                    max(v for row in z_country for v in row if v is not None),
-                                    MAX_COUNT_FOR_COLOR,
-                                ),
-                                1,
-                            )],
+                            "zmax": [max(min(max_country, MAX_COUNT_FOR_COLOR), 1)],
                             "hovertemplate": [hover_country],
                             "colorbar": [dict(title="# orgs")],
                         }],
@@ -349,10 +351,7 @@ def build_24_heatmap(
                             "z": [z_records],
                             "colorscale": [COUNT_COLORSCALE],
                             "zmin": [0],
-                            "zmax": [max(
-                                max(v for row in z_records for v in row if v is not None),
-                                1,
-                            )],
+                            "zmax": [max(max_records, 1)],
                             "hovertemplate": [hover_records],
                             "colorbar": [dict(title="# prefixes")],
                         }],
@@ -438,17 +437,18 @@ def build_16_heatmap(
     )
 
     # ------------------------------------------------------------------
-    # 1) Build grid axes
+    # 1) Build full IPv4 /16 grid axes (0..255 in each dimension)
     # ------------------------------------------------------------------
-    x_vals = sorted(df_buckets_16["bucket_x"].unique())
-    y_vals = sorted(df_buckets_16["bucket_y"].unique())
+    x_vals = list(range(256))  # first octet 0–255
+    y_vals = list(range(256))  # second octet 0–255
     x_to_idx = {x: i for i, x in enumerate(x_vals)}
     y_to_idx = {y: i for i, y in enumerate(y_vals)}
 
-    # Initialize z-matrices for all modes
+    # Initialize z-matrices for all modes.
+    # Use None for "no data" so empty /16s are transparent (no color).
     z_primary = [[None for _ in x_vals] for _ in y_vals]
-    z_country = [[0 for _ in x_vals] for _ in y_vals]
-    z_records = [[0 for _ in x_vals] for _ in y_vals]
+    z_country = [[None for _ in x_vals] for _ in y_vals]
+    z_records = [[None for _ in x_vals] for _ in y_vals]
 
     # ------------------------------------------------------------------
     # 2) Prepare mapping for primary_org → index and palettes
@@ -525,8 +525,11 @@ def build_16_heatmap(
         z_init = z_country
         colorscale_init = COUNT_COLORSCALE
         zmin_init = 0
-        max_val = max(v for row in z_country for v in row if v is not None)
+
+        vals = [v for row in z_country for v in row if v is not None]
+        max_val = max(vals) if vals else 0
         zmax_init = max(min(max_val, MAX_COUNT_FOR_COLOR), 1)
+
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
             "# unique orgs: %{z}<extra></extra>"
@@ -537,8 +540,11 @@ def build_16_heatmap(
         z_init = z_records
         colorscale_init = COUNT_COLORSCALE
         zmin_init = 0
-        max_val = max(v for row in z_records for v in row if v is not None)
+
+        vals = [v for row in z_records for v in row if v is not None]
+        max_val = max(vals) if vals else 0
         zmax_init = max(max_val, 1)
+
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
             "# prefixes: %{z}<extra></extra>"

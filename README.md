@@ -9,7 +9,7 @@ Cider-cli is currently an unpublished tool, but for beta testing purposes you ca
 
 ### Install latest:
 ```shell
-pip install git+https://github.com/lramos0/cider-cli.git
+pip install cider-cli
 ```
 
 ### Development Installation
@@ -24,7 +24,7 @@ pip install -e .
 
 You can produce CIDR maps on an input, see [supported data sources](#-supported-data-sources), using:
 ```shell
-ipmap {input} --kind {geofeed|maxmind|pcap} [options]
+cider {input} --kind {geofeed|maxmind|pcap|cider} [options]
 
 ```
 
@@ -37,7 +37,7 @@ ip_prefix,cc,region,city,...
 
 Run:
 ```shell
-ipmap ripe.csv --kind geofeed -o ripe_map.html
+cider ripe.csv --kind geofeed -o ripe_map.html
 ```
 
 ### 2. MaxMind CSV Snapshot Folder
@@ -49,7 +49,7 @@ GeoLite2-City-Locations-en.csv
 
 Run:
 ```shell
-ipmap GeoLite2-City-CSV_20250902 --kind maxmind -o maxmind_map.html
+cider GeoLite2-City-CSV_20250902 --kind maxmind -o maxmind_map.html
 
 ```
 
@@ -73,7 +73,7 @@ Currently, the formats allow for the following options (default is html output).
 
 # 📊 Example: Full Command
 ```shell
-ipmap ripe.20250903.geo.csv \
+cider ripe.20250903.geo.csv \
 --kind geofeed \
 --view /16 \
 --mode primary \
