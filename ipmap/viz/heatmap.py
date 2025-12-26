@@ -293,7 +293,7 @@ def build_24_heatmap(
     )
 
     # --------------------------------------------------------------
-    # 6) Optional colorscale toggle (same as /16)
+    # 6) Store button data in figure for later HTML injection
     # --------------------------------------------------------------
     hover_primary = (
         "Bucket: %{text}<br>"
@@ -302,85 +302,21 @@ def build_24_heatmap(
     hover_country = "Bucket: %{text}.0/24<br># unique orgs: %{z}<extra></extra>"
     hover_records = "Bucket: %{text}.0/24<br># prefixes: %{z}<extra></extra>"
 
-
-    fig.update_layout(
-        updatemenus=[
-            dict(
-                type="buttons",
-                direction="down",          # ← STACK VERTICALLY
-                x=0.0,
-                y=-0.15,
-                xanchor="left",
-                yanchor="top",             # ← important for vertical stacking
-                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
-                bordercolor="rgba(255,255,255,0.2)",
-                pad=dict(r=0, t=4),
-                font=dict(size=8),
-                buttons=[
-                    dict(
-                        label="Primary (categorical)",
-                        method="update",
-                        args=[{
-                            "z": [z_primary],
-                            "colorscale": [primary_colorscale_default],
-                            "zmin": [0],
-                            "zmax": [max(max(org_code_map.values()) if org_code_map else 0, 1)],
-                            "hovertemplate": [hover_primary],
-                            "colorbar": [dict(title="Org index")],
-                        }],
-                    ),
-                    dict(
-                        label="# Orgs (country_count)",
-                        method="update",
-                        args=[{
-                            "z": [z_country],
-                            "colorscale": [COUNT_COLORSCALE],
-                            "zmin": [0],
-                            "zmax": [max(min(max_country, MAX_COUNT_FOR_COLOR), 1)],
-                            "hovertemplate": [hover_country],
-                            "colorbar": [dict(title="# orgs")],
-                        }],
-                    ),
-                    dict(
-                        label="# Prefixes (record_count)",
-                        method="update",
-                        args=[{
-                            "z": [z_records],
-                            "colorscale": [COUNT_COLORSCALE],
-                            "zmin": [0],
-                            "zmax": [max(max_records, 1)],
-                            "hovertemplate": [hover_records],
-                            "colorbar": [dict(title="# prefixes")],
-                        }],
-                    ),
-                ],
-            ),
-            dict(
-                type="buttons",
-                direction="down",          # ← STACK VERTICALLY
-                x=0.55,
-                y=-0.15,
-                xanchor="left",
-                yanchor="top",
-                pad=dict(r=0, t=4),
-                font=dict(size=8),
-                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
-                bordercolor="rgba(255,255,255,0.2)",
-                buttons=[
-                    dict(
-                        label="Colors: default",
-                        method="restyle",
-                        args=[{"colorscale": [primary_colorscale_default]}],
-                    ),
-                    dict(
-                        label="Colors: neon",
-                        method="restyle",
-                        args=[{"colorscale": [primary_colorscale_neon]}],
-                    ),
-                ],
-            ),
-        ]
-    )
+    # Store button configuration data as custom attributes
+    # These will be used by export functions to generate custom HTML buttons
+    fig._button_data = {
+        "z_primary": z_primary,
+        "z_country": z_country,
+        "z_records": z_records,
+        "primary_colorscale_default": primary_colorscale_default,
+        "primary_colorscale_neon": primary_colorscale_neon,
+        "hover_primary": hover_primary,
+        "hover_country": hover_country,
+        "hover_records": hover_records,
+        "org_code_map": org_code_map,
+        "max_country": max_country,
+        "max_records": max_records,
+    }
 
 
     log.debug("Finished building /24 heatmap figure for %s", parent_label)
@@ -611,14 +547,16 @@ def build_16_heatmap(
         xgap=1,
         ygap=1,
         colorbar=dict(
-            thickness=18,
+            thickness=3,
             len=0.75,
         ),
     )
 
     # ------------------------------------------------------------------
-    # 6) Add interactive buttons (mode + colorscale)
+    # 6) Store button data in figure for later HTML injection
     # ------------------------------------------------------------------
+    # We'll attach the z-matrices and colorscales to the figure's metadata
+    # so the export functions can create custom HTML buttons
     hover_primary = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
         "Primary org index: %{z}<extra></extra>"
@@ -632,97 +570,23 @@ def build_16_heatmap(
         "# prefixes: %{z}<extra></extra>"
     )
 
-    fig.update_layout(
-        updatemenus=[
-            # Mode selector
-            dict(
-                type="buttons",
-                direction="left",
-                x=0.0,
-                y=-0.15,
-                xanchor="left",
-                yanchor="bottom",
-                pad=dict(r=10, t=0),
-                font=dict(size=10),
-                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
-                bordercolor="rgba(255,255,255,0.2)",
-                buttons=[
-                    dict(
-                        label="Primary (categorical)",
-                        method="update",
-                        args=[{
-                            "z": [z_primary],
-                            "colorscale": [primary_colorscale_default],
-                            "zmin": [0],
-                            "zmax": [max(org_code_map.values()) if org_code_map else 1],
-                            "hovertemplate": [hover_primary],
-                            "colorbar": [dict(title="Org index")],
-                        }],
-                    ),
-                    dict(
-                        label="# Orgs (country_count)",
-                        method="update",
-                        args=[{
-                            "z": [z_country],
-                            "colorscale": [COUNT_COLORSCALE],
-                            "zmin": [0],
-                            "zmax": [max(
-                                min(
-                                    max(v for row in z_country for v in row if v is not None),
-                                    MAX_COUNT_FOR_COLOR,
-                                ),
-                                1,
-                            )],
-                            "hovertemplate": [hover_country],
-                            "colorbar": [dict(title="# orgs")],
-                        }],
-                    ),
-                    dict(
-                        label="# Prefixes (record_count)",
-                        method="update",
-                        args=[{
-                            "z": [z_records],
-                            "colorscale": [COUNT_COLORSCALE],
-                            "zmin": [0],
-                            "zmax": [max(
-                                max(v for row in z_records for v in row if v is not None),
-                                1,
-                            )],
-                            "hovertemplate": [hover_records],
-                            "colorbar": [dict(title="# prefixes")],
-                        }],
-                    ),
-                ],
-            ),
-            # Colorscale selector (only meaningful for primary mode)
-            dict(
-                type="buttons",
-                direction="left",
-                x=0.55,
-                y=-0.15,
-                xanchor="left",
-                yanchor="bottom",
-                pad=dict(r=10, t=0),
-                font=dict(size=10),
-                bgcolor="rgba(30,30,30,0.9)",     # 👈 key fix
-                bordercolor="rgba(255,255,255,0.2)",
-                buttons=[
-                    dict(
-                        label="Colors: default",
-                        method="restyle",
-                        args=[{"colorscale": [primary_colorscale_default]}],
-                    ),
-                    dict(
-                        label="Colors: neon",
-                        method="restyle",
-                        args=[{"colorscale": [primary_colorscale_neon]}],
-                    ),
-                ],
-            ),
-        ]
-    )
+    # Store button configuration data as custom attributes
+    # These will be used by export functions to generate custom HTML buttons
+    fig._button_data = {
+        "z_primary": z_primary,
+        "z_country": z_country,
+        "z_records": z_records,
+        "primary_colorscale_default": primary_colorscale_default,
+        "primary_colorscale_neon": primary_colorscale_neon,
+        "hover_primary": hover_primary,
+        "hover_country": hover_country,
+        "hover_records": hover_records,
+        "org_code_map": org_code_map,
+        "max_country": max(v for row in z_country for v in row if v is not None) if any(v is not None for row in z_country for v in row) else 0,
+        "max_records": max(v for row in z_records for v in row if v is not None) if any(v is not None for row in z_records for v in row) else 0,
+    }
 
-    log.debug("Finished building /16 heatmap figure with interactive controls")
+    log.debug("Finished building /16 heatmap figure (buttons will be added during HTML export)")
     return fig
 
 

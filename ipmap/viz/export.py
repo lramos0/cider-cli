@@ -46,7 +46,7 @@ def save_html_with_whois_on_click(
 ) -> None:
     """
     Save Plotly HTML and inject JS so clicking a cell opens a WHOIS/RDAP lookup
-    for the clicked /16.
+    for the clicked /16. Also includes custom HTML buttons for mode/colorscale switching.
 
     provider:
       - "rdap_org": https://rdap.org/ip/<ip>   (best generic RDAP aggregator)
@@ -61,61 +61,291 @@ def save_html_with_whois_on_click(
     else:
         base = "https://rdap.org/ip/"
 
-    post_script = f"""
-document.addEventListener("DOMContentLoaded", function() {{
-  var gd = document.getElementById("{div_id}");
-  if (!gd || !gd.on) return;
+    # Extract button data if available
+    button_data = getattr(fig, '_button_data', None)
+    button_data_json = json.dumps(button_data) if button_data else "null"
 
-  // Small toast helper
-  function toast(msg) {{
-    var t = document.createElement("div");
-    t.textContent = msg;
-    t.style.position = "fixed";
-    t.style.left = "12px";
-    t.style.bottom = "12px";
-    t.style.padding = "8px 10px";
-    t.style.background = "rgba(20,20,20,0.85)";
-    t.style.border = "1px solid rgba(255,255,255,0.15)";
-    t.style.borderRadius = "10px";
-    t.style.color = "#eee";
-    t.style.fontFamily = "system-ui, -apple-system, Segoe UI, sans-serif";
-    t.style.fontSize = "12px";
-    t.style.zIndex = 999999;
-    document.body.appendChild(t);
-    setTimeout(function() {{
-      if (t && t.parentNode) t.parentNode.removeChild(t);
-    }}, 1800);
-  }}
-
-  gd.on("plotly_click", function(evt) {{
-    if (!evt || !evt.points || !evt.points.length) return;
-    var p = evt.points[0];
-    var x = p.x;
-    var y = p.y;
-
-    // x/y should be octets for /16 view (0..255)
-    if (x === undefined || y === undefined) return;
-
-    var ip = x + "." + y + ".0.0";
-    var cidr = ip + "/16";
-    var url = "{base}" + encodeURIComponent(ip);
-
-    toast("Opening WHOIS/RDAP for " + cidr);
-    window.open(url, "_blank", "noopener,noreferrer");
-  }});
-}});
-"""
-
-    html = pio.to_html(
+    # Generate the initial HTML with plotly
+    html_content = pio.to_html(
         fig,
         include_plotlyjs=include_plotlyjs,
-        full_html=True,
+        full_html=False,
         div_id=div_id,
-        post_script=post_script,
+        config={"responsive": True},
     )
 
+    # Build complete HTML with custom button toolbar
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>IPv4 /16 Address Space Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #111111;
+            color: #EEEEEE;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }}
+
+        .toolbar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }}
+
+        .button-group {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+
+        .button-group-label {{
+            font-size: 12px;
+            color: #999;
+            margin-right: 4px;
+        }}
+
+        .toolbar button {{
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #ddd;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }}
+
+        .toolbar button:hover {{
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.25);
+        }}
+
+        .toolbar button.active {{
+            background: rgba(74, 179, 255, 0.2);
+            border-color: rgba(74, 179, 255, 0.5);
+            color: #4ab3ff;
+        }}
+
+        .divider {{
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.15);
+        }}
+
+        #content {{
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }}
+
+        #{div_id} {{
+            width: 100% !important;
+            height: 100% !important;
+            max-width: min(100%, 100vh);
+            max-height: min(100%, 100vw);
+            aspect-ratio: 1 / 1;
+        }}
+
+        .toast {{
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            padding: 10px 14px;
+            background: rgba(20,20,20,0.9);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #eee;
+            font-size: 13px;
+            z-index: 9999;
+            animation: fadeIn 0.2s;
+        }}
+
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(10px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="button-group">
+            <span class="button-group-label">Mode:</span>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Colors:</span>
+            <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
+            <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
+        </div>
+    </div>
+
+    <div id="content">
+        {html_content}
+    </div>
+
+    <script>
+    (function() {{
+        var buttonData = {button_data_json};
+        var gd = document.getElementById("{div_id}");
+        var currentMode = "primary";
+        var currentColorscheme = "default";
+
+        // Toast notification
+        function toast(msg) {{
+            var t = document.createElement("div");
+            t.className = "toast";
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(function() {{
+                if (t && t.parentNode) t.parentNode.removeChild(t);
+            }}, 1800);
+        }}
+
+        // Update button active states
+        function updateButtonStates() {{
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.mode === currentMode);
+            }});
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+        }}
+
+        // Mode switching
+        function switchMode(mode) {{
+            if (!buttonData || !gd) return;
+            currentMode = mode;
+
+            var update = {{}};
+
+            if (mode === "primary") {{
+                update.z = [buttonData.z_primary];
+                update.colorscale = [currentColorscheme === "neon" ?
+                    buttonData.primary_colorscale_neon :
+                    buttonData.primary_colorscale_default];
+                update.zmin = [0];
+                update.zmax = [Math.max(
+                    buttonData.org_code_map ? Math.max(...Object.values(buttonData.org_code_map)) : 0,
+                    1
+                )];
+                update.hovertemplate = [buttonData.hover_primary];
+                update['colorbar.title'] = ["Org index"];
+            }} else if (mode === "country_count") {{
+                update.z = [buttonData.z_country];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(Math.min(buttonData.max_country, 10), 1)];
+                update.hovertemplate = [buttonData.hover_country];
+                update['colorbar.title'] = ["# orgs"];
+            }} else if (mode === "record_count") {{
+                update.z = [buttonData.z_records];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(buttonData.max_records, 1)];
+                update.hovertemplate = [buttonData.hover_records];
+                update['colorbar.title'] = ["# prefixes"];
+            }}
+
+            Plotly.update(gd, update, {{}});
+            updateButtonStates();
+        }}
+
+        // Colorscheme switching
+        function switchColorscheme(scheme) {{
+            if (!buttonData || !gd || currentMode !== "primary") return;
+            currentColorscheme = scheme;
+
+            var colorscale = scheme === "neon" ?
+                buttonData.primary_colorscale_neon :
+                buttonData.primary_colorscale_default;
+
+            Plotly.restyle(gd, {{ colorscale: [colorscale] }});
+            updateButtonStates();
+        }}
+
+        // Setup event listeners
+        document.addEventListener("DOMContentLoaded", function() {{
+            // Mode buttons
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchMode(this.dataset.mode);
+                }});
+            }});
+
+            // Color buttons
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // WHOIS click handler
+            if (gd && gd.on) {{
+                gd.on("plotly_click", function(evt) {{
+                    if (!evt || !evt.points || !evt.points.length) return;
+                    var p = evt.points[0];
+                    var x = p.x;
+                    var y = p.y;
+
+                    if (x === undefined || y === undefined) return;
+
+                    var ip = x + "." + y + ".0.0";
+                    var cidr = ip + "/16";
+                    var url = "{base}" + encodeURIComponent(ip);
+
+                    toast("Opening WHOIS/RDAP for " + cidr);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                }});
+            }}
+
+            // Handle window resize
+            window.addEventListener("resize", function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }});
+
+            // Initial resize to ensure proper sizing
+            setTimeout(function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }}, 100);
+        }});
+    }})();
+    </script>
+</body>
+</html>"""
+
     out_path.write_text(html, encoding="utf-8")
-    log.debug("HTML (with whois-on-click) written successfully to %s", out_path)
+    log.debug("HTML (with whois-on-click and custom buttons) written successfully to %s", out_path)
 
 def save_html_with_backlink_and_whois(
         fig: Figure,
@@ -145,6 +375,10 @@ def save_html_with_backlink_and_whois(
         base = "https://rdap.arin.net/registry/ip/"
     else:
         base = "https://rdap.org/ip/"
+
+    # Extract button data if available
+    button_data = getattr(fig, '_button_data', None)
+    button_data_json = json.dumps(button_data) if button_data else "null"
 
     # Ensure div id is stable so CSS works
     fig_html = pio.to_html(
@@ -198,11 +432,46 @@ def save_html_with_backlink_and_whois(
               }}
               .toolbar a:hover {{ text-decoration: underline; }}
               .hint {{ font-size: 12px; color: #aaa; }}
+
+              .button-group {{
+                display: flex;
+                gap: 6px;
+                align-items: center;
+              }}
+              .button-group-label {{
+                font-size: 11px;
+                color: #999;
+                margin-right: 4px;
+              }}
+              .toolbar button {{
+                background: rgba(255,255,255,0.06);
+                border: 1px solid rgba(255,255,255,0.12);
+                color: #ddd;
+                padding: 4px 10px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 11px;
+                transition: all 0.2s;
+              }}
+              .toolbar button:hover {{
+                background: rgba(255,255,255,0.10);
+                border-color: rgba(255,255,255,0.20);
+              }}
+              .toolbar button.active {{
+                background: rgba(74, 179, 255, 0.2);
+                border-color: rgba(74, 179, 255, 0.5);
+                color: #4ab3ff;
+              }}
+              .divider {{
+                width: 1px;
+                height: 20px;
+                background: rgba(255,255,255,0.15);
+              }}
         
               /* Inside-view layout */
               .wrap {{
                 position: relative;
-                height: calc(100vh - 44px);
+                height: calc(20vh);
                 display: flex;
                 gap: 14px;
                 padding: 12px;
@@ -218,16 +487,15 @@ def save_html_with_backlink_and_whois(
                 overflow: hidden;
                 position: relative;
               }}
-        
+
               /* Force Plotly to fill the left panel */
               #{div_id} {{
-                width: 100%;
-                height: 100%;
+                width: 100% !important;
+                height: 100% !important;
               }}
         
               .right {{
-                width: 520px;
-                max-width: 520px;
+                width: 800px;
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 14px;
                 background: rgba(255,255,255,0.02);
@@ -270,7 +538,7 @@ def save_html_with_backlink_and_whois(
               }}
         
               .panelBody {{
-                padding: 10px 12px;
+                padding: 5px 6px;
                 overflow: auto;
                 font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
                 font-size: 12px;
@@ -289,7 +557,25 @@ def save_html_with_backlink_and_whois(
           <body>
             <div class="toolbar">
               <a href="{back_href}">&larr; Back to /16 view</a>
-              <span class="hint">Inside view: grid + RDAP panel. Click a cell to {( "update the panel" if update_panel_on_click else "open RDAP in a new tab" )}.</span>
+
+              <div class="divider"></div>
+
+              <div class="button-group">
+                <span class="button-group-label">Mode:</span>
+                <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
+                <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
+                <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="button-group">
+                <span class="button-group-label">Colors:</span>
+                <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
+                <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
+              </div>
+
+              <span class="hint" style="margin-left: auto;">Click a cell to {( "update the panel" if update_panel_on_click else "open RDAP in a new tab" )}.</span>
             </div>
         
             <div class="wrap" id="wrap">
@@ -316,9 +602,75 @@ def save_html_with_backlink_and_whois(
               var BASE = {json.dumps(base)};
               var parentIp = {json.dumps(parent_ip)};
               var updateOnClick = {str(bool(update_panel_on_click)).lower()};
-        
+              var buttonData = {button_data_json};
+              var gd = document.getElementById({json.dumps(div_id)});
+              var currentMode = "primary";
+              var currentColorscheme = "default";
+
               function pretty(obj) {{
                 try {{ return JSON.stringify(obj, null, 2); }} catch (e) {{ return String(obj); }}
+              }}
+
+              // Update button active states
+              function updateButtonStates() {{
+                document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                  btn.classList.toggle('active', btn.dataset.mode === currentMode);
+                }});
+                document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                  btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+                }});
+              }}
+
+              // Mode switching
+              function switchMode(mode) {{
+                if (!buttonData || !gd) return;
+                currentMode = mode;
+
+                var update = {{}};
+
+                if (mode === "primary") {{
+                  update.z = [buttonData.z_primary];
+                  update.colorscale = [currentColorscheme === "neon" ?
+                      buttonData.primary_colorscale_neon :
+                      buttonData.primary_colorscale_default];
+                  update.zmin = [0];
+                  update.zmax = [Math.max(
+                      buttonData.org_code_map ? Math.max(...Object.values(buttonData.org_code_map)) : 0,
+                      1
+                  )];
+                  update.hovertemplate = [buttonData.hover_primary];
+                  update['colorbar.title'] = ["Org index"];
+                }} else if (mode === "country_count") {{
+                  update.z = [buttonData.z_country];
+                  update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                  update.zmin = [0];
+                  update.zmax = [Math.max(Math.min(buttonData.max_country, 10), 1)];
+                  update.hovertemplate = [buttonData.hover_country];
+                  update['colorbar.title'] = ["# orgs"];
+                }} else if (mode === "record_count") {{
+                  update.z = [buttonData.z_records];
+                  update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                  update.zmin = [0];
+                  update.zmax = [Math.max(buttonData.max_records, 1)];
+                  update.hovertemplate = [buttonData.hover_records];
+                  update['colorbar.title'] = ["# prefixes"];
+                }}
+
+                Plotly.update(gd, update, {{}});
+                updateButtonStates();
+              }}
+
+              // Colorscheme switching
+              function switchColorscheme(scheme) {{
+                if (!buttonData || !gd || currentMode !== "primary") return;
+                currentColorscheme = scheme;
+
+                var colorscale = scheme === "neon" ?
+                    buttonData.primary_colorscale_neon :
+                    buttonData.primary_colorscale_default;
+
+                Plotly.restyle(gd, {{ colorscale: [colorscale] }});
+                updateButtonStates();
               }}
         
               function setPanel(targetIp, label) {{
@@ -410,25 +762,38 @@ def save_html_with_backlink_and_whois(
         
               document.addEventListener("DOMContentLoaded", function() {{
                 // Force Plotly to fill the left panel
-                var gd = document.getElementById({json.dumps(div_id)});
                 if (window.Plotly && gd) {{
                   setTimeout(function() {{ Plotly.Plots.resize(gd); drawArrow(); }}, 0);
                 }} else {{
                   drawArrow();
                 }}
-        
+
+                // Mode buttons
+                document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                  btn.addEventListener('click', function() {{
+                    switchMode(this.dataset.mode);
+                  }});
+                }});
+
+                // Color buttons
+                document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                  btn.addEventListener('click', function() {{
+                    switchColorscheme(this.dataset.colorscheme);
+                  }});
+                }});
+
                 // Initial panel: parent /16 if provided
                 if (parentIp) {{
                   setPanel(parentIp, {json.dumps(parent_display)});
                 }} else {{
                   setPanel("", "");
                 }}
-        
+
                 window.addEventListener("resize", function() {{
                   if (window.Plotly && gd) Plotly.Plots.resize(gd);
                   drawArrow();
                 }});
-        
+
                 // Clicking a /24 cell:
                 if (gd && gd.on) {{
                   gd.on("plotly_click", function(evt) {{
@@ -436,11 +801,11 @@ def save_html_with_backlink_and_whois(
                     var p = evt.points[0];
                     var label = (p.text !== undefined && p.text !== null) ? String(p.text) : "";
                     if (!label || label.indexOf(".") === -1) return;
-        
+
                     // label is "a.b.c" from your text_grid
                     var ip24 = label + ".0";
                     var cidr24 = ip24 + "/24";
-        
+
                     if (updateOnClick) {{
                       setPanel(ip24, cidr24);
                     }} else {{
@@ -513,7 +878,7 @@ def save_html_nested_16(
         div_id: str = "ipmap_figure",
 ) -> None:
     """
-    Save the top-level /16 figure as HTML and inject JS that:
+    Save the top-level /16 figure as HTML with custom buttons and inject JS that:
       - listens for plotly_click
       - redirects to <nested_basename>_16_<bucket_x>_<bucket_y>.html
     """
@@ -521,30 +886,260 @@ def save_html_nested_16(
     log.info("Saving nested /16 HTML visualization to %s", out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    post_script = f"""
-document.addEventListener("DOMContentLoaded", function() {{
-  var gd = document.getElementById("{div_id}");
-  if (!gd || !gd.addEventListener) return;
+    # Extract button data if available
+    button_data = getattr(fig, '_button_data', None)
+    button_data_json = json.dumps(button_data) if button_data else "null"
 
-  gd.on('plotly_click', function(evt) {{
-    if (!evt || !evt.points || !evt.points.length) return;
-    var p = evt.points[0];
-    var x = p.x;
-    var y = p.y;
-    if (x === undefined || y === undefined) return;
-    var url = "{nested_basename}_16_" + x + "_" + y + ".html";
-    window.location.href = url;
-  }});
-}});
-"""
-
-    html = pio.to_html(
+    # Generate the initial HTML with plotly
+    html_content = pio.to_html(
         fig,
         include_plotlyjs=include_plotlyjs,
-        full_html=True,
+        full_html=False,
         div_id=div_id,
-        post_script=post_script,
+        config={"responsive": True},
     )
+
+    # Build complete HTML with custom button toolbar
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>IPv4 /16 Address Space Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #111111;
+            color: #EEEEEE;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }}
+
+        .toolbar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }}
+
+        .button-group {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+
+        .button-group-label {{
+            font-size: 12px;
+            color: #999;
+            margin-right: 4px;
+        }}
+
+        .toolbar button {{
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #ddd;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }}
+
+        .toolbar button:hover {{
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.25);
+        }}
+
+        .toolbar button.active {{
+            background: rgba(74, 179, 255, 0.2);
+            border-color: rgba(74, 179, 255, 0.5);
+            color: #4ab3ff;
+        }}
+
+        .divider {{
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.15);
+        }}
+
+        .hint {{
+            font-size: 12px;
+            color: #777;
+            margin-left: auto;
+        }}
+
+        #content {{
+            position: fixed;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }}
+
+        #{div_id} {{
+            width: 100% !important;
+            height: 100% !important;
+            max-width: min(100%, 100vh);
+            max-height: min(100%, 100vw);
+            aspect-ratio: 1 / 1;
+        }}
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="button-group">
+            <span class="button-group-label">Mode:</span>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Colors:</span>
+            <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
+            <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
+        </div>
+
+        <span class="hint">Click a cell to drill down to /24 view</span>
+    </div>
+
+    <div id="content">
+        {html_content}
+    </div>
+
+    <script>
+    (function() {{
+        var buttonData = {button_data_json};
+        var gd = document.getElementById("{div_id}");
+        var currentMode = "primary";
+        var currentColorscheme = "default";
+
+        // Update button active states
+        function updateButtonStates() {{
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.mode === currentMode);
+            }});
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+        }}
+
+        // Mode switching
+        function switchMode(mode) {{
+            if (!buttonData || !gd) return;
+            currentMode = mode;
+
+            var update = {{}};
+
+            if (mode === "primary") {{
+                update.z = [buttonData.z_primary];
+                update.colorscale = [currentColorscheme === "neon" ?
+                    buttonData.primary_colorscale_neon :
+                    buttonData.primary_colorscale_default];
+                update.zmin = [0];
+                update.zmax = [Math.max(
+                    buttonData.org_code_map ? Math.max(...Object.values(buttonData.org_code_map)) : 0,
+                    1
+                )];
+                update.hovertemplate = [buttonData.hover_primary];
+                update['colorbar.title'] = ["Org index"];
+            }} else if (mode === "country_count") {{
+                update.z = [buttonData.z_country];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(Math.min(buttonData.max_country, 10), 1)];
+                update.hovertemplate = [buttonData.hover_country];
+                update['colorbar.title'] = ["# orgs"];
+            }} else if (mode === "record_count") {{
+                update.z = [buttonData.z_records];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(buttonData.max_records, 1)];
+                update.hovertemplate = [buttonData.hover_records];
+                update['colorbar.title'] = ["# prefixes"];
+            }}
+
+            Plotly.update(gd, update, {{}});
+            updateButtonStates();
+        }}
+
+        // Colorscheme switching
+        function switchColorscheme(scheme) {{
+            if (!buttonData || !gd || currentMode !== "primary") return;
+            currentColorscheme = scheme;
+
+            var colorscale = scheme === "neon" ?
+                buttonData.primary_colorscale_neon :
+                buttonData.primary_colorscale_default;
+
+            Plotly.restyle(gd, {{ colorscale: [colorscale] }});
+            updateButtonStates();
+        }}
+
+        // Setup event listeners
+        document.addEventListener("DOMContentLoaded", function() {{
+            // Mode buttons
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchMode(this.dataset.mode);
+                }});
+            }});
+
+            // Color buttons
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // Nested navigation click handler
+            if (gd && gd.on) {{
+                gd.on('plotly_click', function(evt) {{
+                    if (!evt || !evt.points || !evt.points.length) return;
+                    var p = evt.points[0];
+                    var x = p.x;
+                    var y = p.y;
+                    if (x === undefined || y === undefined) return;
+                    var url = "{nested_basename}_16_" + x + "_" + y + ".html";
+                    window.location.href = url;
+                }});
+            }}
+
+            // Handle window resize
+            window.addEventListener("resize", function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }});
+
+            // Initial resize to ensure proper sizing
+            setTimeout(function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }}, 100);
+        }});
+    }})();
+    </script>
+</body>
+</html>"""
 
     out_path.write_text(html, encoding="utf-8")
     log.debug("Nested /16 HTML written successfully to %s", out_path)
@@ -557,11 +1152,15 @@ def save_html_with_backlink(
         div_id: str = "ipmap_figure",
 ) -> None:
     """
-    Save a figure as HTML with a simple "Back to /16 view" link at the top.
+    Save a figure as HTML with a "Back to /16 view" link and custom buttons at the top.
     """
     out_path = Path(path)
     log.info("Saving nested /24 HTML visualization to %s", out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Extract button data if available
+    button_data = getattr(fig, '_button_data', None)
+    button_data_json = json.dumps(button_data) if button_data else "null"
 
     # We want just the div for the figure, no full HTML wrapper.
     fig_html = pio.to_html(
@@ -569,45 +1168,237 @@ def save_html_with_backlink(
         include_plotlyjs=False,
         full_html=False,
         div_id=div_id,
+        config={"responsive": True},
     )
 
-    html = f"""
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>{fig.layout.title.text if fig.layout.title else "IPv4 /24 view"}</title>
-            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-            <style>
-              body {{
-                margin: 0;
-                background: #111111;
-                color: #EEEEEE;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-              }}
-              .toolbar {{
-                padding: 8px 12px;
-                border-bottom: 1px solid #333;
-                background: #181818;
-              }}
-              .toolbar a {{
-                color: #4ab3ff;
-                text-decoration: none;
-                font-size: 14px;
-              }}
-              .toolbar a:hover {{
-                text-decoration: underline;
-              }}
-            </style>
-          </head>
-          <body>
-            <div class="toolbar">
-              <a href="{back_href}">&larr; Back to /16 view</a>
-            </div>
-            {fig_html}
-          </body>
-        </html>
-        """
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>{fig.layout.title.text if fig.layout.title else "IPv4 /24 view"}</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #111111;
+            color: #EEEEEE;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }}
+
+        .toolbar {{
+            height: 44px;
+            padding: 8px 12px;
+            border-bottom: 1px solid #333;
+            background: #181818;
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            flex-shrink: 0;
+        }}
+
+        .toolbar a {{
+            color: #4ab3ff;
+            text-decoration: none;
+            font-size: 14px;
+        }}
+
+        .toolbar a:hover {{
+            text-decoration: underline;
+        }}
+
+        .button-group {{
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }}
+
+        .button-group-label {{
+            font-size: 11px;
+            color: #999;
+            margin-right: 4px;
+        }}
+
+        .toolbar button {{
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #ddd;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }}
+
+        .toolbar button:hover {{
+            background: rgba(255,255,255,0.10);
+            border-color: rgba(255,255,255,0.20);
+        }}
+
+        .toolbar button.active {{
+            background: rgba(74, 179, 255, 0.2);
+            border-color: rgba(74, 179, 255, 0.5);
+            color: #4ab3ff;
+        }}
+
+        .divider {{
+            width: 1px;
+            height: 20px;
+            background: rgba(255,255,255,0.15);
+        }}
+
+        #content {{
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: 0;
+        }}
+
+        #{div_id} {{
+            width: 100% !important;
+            height: 100% !important;
+            max-width: min(100%, 100vh);
+            max-height: min(100%, 100vw - 40px);
+            aspect-ratio: 1 / 1;
+        }}
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <a href="{back_href}">&larr; Back to /16 view</a>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Mode:</span>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Colors:</span>
+            <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
+            <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
+        </div>
+    </div>
+
+    <div id="content">
+        {fig_html}
+    </div>
+
+    <script>
+    (function() {{
+        var buttonData = {button_data_json};
+        var gd = document.getElementById("{div_id}");
+        var currentMode = "primary";
+        var currentColorscheme = "default";
+
+        // Update button active states
+        function updateButtonStates() {{
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.mode === currentMode);
+            }});
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+        }}
+
+        // Mode switching
+        function switchMode(mode) {{
+            if (!buttonData || !gd) return;
+            currentMode = mode;
+
+            var update = {{}};
+
+            if (mode === "primary") {{
+                update.z = [buttonData.z_primary];
+                update.colorscale = [currentColorscheme === "neon" ?
+                    buttonData.primary_colorscale_neon :
+                    buttonData.primary_colorscale_default];
+                update.zmin = [0];
+                update.zmax = [Math.max(
+                    buttonData.org_code_map ? Math.max(...Object.values(buttonData.org_code_map)) : 0,
+                    1
+                )];
+                update.hovertemplate = [buttonData.hover_primary];
+                update['colorbar.title'] = ["Org index"];
+            }} else if (mode === "country_count") {{
+                update.z = [buttonData.z_country];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(Math.min(buttonData.max_country, 10), 1)];
+                update.hovertemplate = [buttonData.hover_country];
+                update['colorbar.title'] = ["# orgs"];
+            }} else if (mode === "record_count") {{
+                update.z = [buttonData.z_records];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(buttonData.max_records, 1)];
+                update.hovertemplate = [buttonData.hover_records];
+                update['colorbar.title'] = ["# prefixes"];
+            }}
+
+            Plotly.update(gd, update, {{}});
+            updateButtonStates();
+        }}
+
+        // Colorscheme switching
+        function switchColorscheme(scheme) {{
+            if (!buttonData || !gd || currentMode !== "primary") return;
+            currentColorscheme = scheme;
+
+            var colorscale = scheme === "neon" ?
+                buttonData.primary_colorscale_neon :
+                buttonData.primary_colorscale_default;
+
+            Plotly.restyle(gd, {{ colorscale: [colorscale] }});
+            updateButtonStates();
+        }}
+
+        // Setup event listeners
+        document.addEventListener("DOMContentLoaded", function() {{
+            // Mode buttons
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchMode(this.dataset.mode);
+                }});
+            }});
+
+            // Color buttons
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // Handle window resize
+            window.addEventListener("resize", function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }});
+
+            // Initial resize to ensure proper sizing
+            setTimeout(function() {{
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }}, 100);
+        }});
+    }})();
+    </script>
+</body>
+</html>"""
 
     out_path.write_text(html, encoding="utf-8")
     log.debug("Nested /24 HTML written successfully to %s", out_path)
