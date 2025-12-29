@@ -546,6 +546,7 @@ def build_16_heatmap(
     fig.update_traces(
         xgap=1,
         ygap=1,
+        showscale=False,
         colorbar=dict(
             thickness=3,
             len=0.75,

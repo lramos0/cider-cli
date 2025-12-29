@@ -255,7 +255,7 @@ def map(
             buckets_16,
             mode=mode,
             colorscale_mode=colorscale_mode,
-            title=f"IPv4 /16 Address Space – {kind} (view={view})",
+            title=f"CIDR Map produced via cider-cli",
         )
 
         # 4) export

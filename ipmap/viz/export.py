@@ -90,6 +90,12 @@ def save_html_with_whois_on_click(
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             overflow: hidden;
         }}
+        
+        #ipmap_figure, svg, rect.draglayer.cursor-crosshair, main-svg {{
+          min-width: 95vw;
+          max-width: 95vw;
+          max-height: 95vw;
+        }}
 
         .toolbar {{
             position: fixed;
@@ -149,7 +155,7 @@ def save_html_with_whois_on_click(
 
         #content {{
             position: fixed;
-            top: 50px;
+            top: 10px;
             left: 0;
             right: 0;
             bottom: 0;
@@ -165,7 +171,7 @@ def save_html_with_whois_on_click(
             height: 100% !important;
             max-width: min(100%, 100vh);
             max-height: min(100%, 100vw);
-            aspect-ratio: 1 / 1;
+            aspect-ratio: 5 / 3;
         }}
 
         .toast {{
@@ -408,67 +414,77 @@ def save_html_with_backlink_and_whois(
             <title>{fig.layout.title.text if fig.layout.title else "IPv4 /24 inside view"}</title>
             <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
             <style>
-              html, body {{
-                height: 100%;
-                margin: 0;
-                background: #111111;
-                color: #EEEEEE;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-              }}
-              .toolbar {{
-                height: 44px;
-                padding: 8px 12px;
-                border-bottom: 1px solid #333;
-                background: #181818;
-                display: flex;
-                gap: 14px;
-                align-items: center;
-                box-sizing: border-box;
-              }}
-              .toolbar a {{
-                color: #4ab3ff;
-                text-decoration: none;
-                font-size: 14px;
-              }}
-              .toolbar a:hover {{ text-decoration: underline; }}
-              .hint {{ font-size: 12px; color: #aaa; }}
-
-              .button-group {{
-                display: flex;
-                gap: 6px;
-                align-items: center;
-              }}
-              .button-group-label {{
-                font-size: 11px;
-                color: #999;
-                margin-right: 4px;
-              }}
-              .toolbar button {{
-                background: rgba(255,255,255,0.06);
-                border: 1px solid rgba(255,255,255,0.12);
-                color: #ddd;
-                padding: 4px 10px;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 11px;
-                transition: all 0.2s;
-              }}
-              .toolbar button:hover {{
-                background: rgba(255,255,255,0.10);
-                border-color: rgba(255,255,255,0.20);
-              }}
-              .toolbar button.active {{
-                background: rgba(74, 179, 255, 0.2);
-                border-color: rgba(74, 179, 255, 0.5);
-                color: #4ab3ff;
-              }}
-              .divider {{
-                width: 1px;
-                height: 20px;
-                background: rgba(255,255,255,0.15);
-              }}
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background: #111111;
+                    color: #EEEEEE;
+                    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    overflow: hidden;
+                }}
+                
+                #ipmap_figure, svg, rect.draglayer.cursor-crosshair, main-svg {{
+                  min-width: 95vw;
+                  max-width: 95vw;
+                  max-height: 95vw;
+                }}
         
-              /* Inside-view layout */
+                .toolbar {{
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: 50px;
+                    background: #1a1a1a;
+                    border-bottom: 1px solid #333;
+                    display: flex;
+                    align-items: center;
+                    padding: 0 16px;
+                    gap: 12px;
+                    z-index: 1000;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                }}
+        
+                .button-group {{
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                }}
+        
+                .button-group-label {{
+                    font-size: 12px;
+                    color: #999;
+                    margin-right: 4px;
+                }}
+        
+                .toolbar button {{
+                    background: rgba(255,255,255,0.08);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    color: #ddd;
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                }}
+        
+                .toolbar button:hover {{
+                    background: rgba(255,255,255,0.12);
+                    border-color: rgba(255,255,255,0.25);
+                }}
+        
+                .toolbar button.active {{
+                    background: rgba(74, 179, 255, 0.2);
+                    border-color: rgba(74, 179, 255, 0.5);
+                    color: #4ab3ff;
+                }}
+        
+                .divider {{
+                    width: 1px;
+                    height: 24px;
+                    background: rgba(255,255,255,0.15);
+                }}
+                /* Inside-view layout */
               .wrap {{
                 position: relative;
                 height: calc(20vh);
@@ -480,7 +496,8 @@ def save_html_with_backlink_and_whois(
         
               .left {{
                 flex: 1 1 auto;
-                min-width: 520px;
+                min-width: 650px;
+                min-height: 650px;
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 14px;
                 background: rgba(255,255,255,0.02);
@@ -495,7 +512,8 @@ def save_html_with_backlink_and_whois(
               }}
         
               .right {{
-                width: 800px;
+                min-width: 520px;
+                min-height: 520px;
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 14px;
                 background: rgba(255,255,255,0.02);
@@ -551,6 +569,45 @@ def save_html_with_backlink_and_whois(
                 position: absolute;
                 inset: 0;
                 pointer-events: none;
+              }}
+              #content {{
+                    position: fixed;
+                    top: 10px;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                    box-sizing: border-box;
+              }}
+        
+              #{div_id} {{
+                    width: 100% !important;
+                    height: 100% !important;
+                    max-width: min(100%, 100vh);
+                    max-height: min(100%, 100vw);
+                    aspect-ratio: 5 / 3;
+              }}
+        
+              .toast {{
+                    position: fixed;
+                    left: 16px;
+                    bottom: 16px;
+                    padding: 10px 14px;
+                    background: rgba(20,20,20,0.9);
+                    border: 1px solid rgba(255,255,255,0.2);
+                    border-radius: 8px;
+                    color: #eee;
+                    font-size: 13px;
+                    z-index: 9999;
+                    animation: fadeIn 0.2s;
+              }}
+        
+              @keyframes fadeIn {{
+                from {{ opacity: 0; transform: translateY(10px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
               }}
             </style>
           </head>
@@ -916,6 +973,11 @@ def save_html_nested_16(
             overflow: hidden;
         }}
 
+        #ipmap_figure, svg, rect.draglayer.cursor-crosshair, main-svg {{
+            min-width: 95vw;
+            max-width: 95vw;
+            max-height: 95vw;
+        }}
         .toolbar {{
             position: fixed;
             top: 0;
@@ -980,7 +1042,7 @@ def save_html_nested_16(
 
         #content {{
             position: fixed;
-            top: 50px;
+            top: 10px;
             left: 0;
             right: 0;
             bottom: 0;
@@ -996,7 +1058,7 @@ def save_html_nested_16(
             height: 100% !important;
             max-width: min(100%, 100vh);
             max-height: min(100%, 100vw);
-            aspect-ratio: 1 / 1;
+            aspect-ratio: 5 / 3;
         }}
     </style>
 </head>
@@ -1186,7 +1248,6 @@ def save_html_with_backlink(
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             height: 100vh;
             display: flex;
-            flex-direction: column;
             overflow: hidden;
         }}
 
@@ -1265,8 +1326,8 @@ def save_html_with_backlink(
             width: 100% !important;
             height: 100% !important;
             max-width: min(100%, 100vh);
-            max-height: min(100%, 100vw - 40px);
-            aspect-ratio: 1 / 1;
+            max-height: min(100%, 100vw);
+            aspect-ratio: 5 / 3;
         }}
     </style>
 </head>
