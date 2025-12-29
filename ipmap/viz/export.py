@@ -422,12 +422,6 @@ def save_html_with_backlink_and_whois(
                     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                     overflow: hidden;
                 }}
-                
-                #ipmap_figure, svg, rect.draglayer.cursor-crosshair, main-svg {{
-                  min-width: 95vw;
-                  max-width: 95vw;
-                  max-height: 95vw;
-                }}
         
                 .toolbar {{
                     position: fixed;
