@@ -279,6 +279,12 @@ def save_html_with_whois_on_click(
             <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
             <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
         </div>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <button id="btn-overlays" class="overlay-btn active" data-enabled="true">Overlays</button>
+        </div>
     </div>
 
     <div id="content">
@@ -291,6 +297,11 @@ def save_html_with_whois_on_click(
         var gd = document.getElementById("{div_id}");
         var currentMode = "primary";
         var currentColorscheme = "default";
+        var overlaysEnabled = true;
+
+        // Store original overlays (shapes and annotations)
+        var originalShapes = buttonData && buttonData.overlay_shapes ? buttonData.overlay_shapes : [];
+        var originalAnnotations = buttonData && buttonData.overlay_annotations ? buttonData.overlay_annotations : [];
 
         // Toast notification
         function toast(msg) {{
@@ -310,6 +321,9 @@ def save_html_with_whois_on_click(
             }});
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', overlaysEnabled);
             }});
         }}
 
@@ -365,6 +379,26 @@ def save_html_with_whois_on_click(
             updateButtonStates();
         }}
 
+        // Overlay toggling
+        function toggleOverlays() {{
+            if (!gd) return;
+            overlaysEnabled = !overlaysEnabled;
+
+            var layoutUpdate = {{}};
+            if (overlaysEnabled) {{
+                // Show overlays
+                layoutUpdate.shapes = originalShapes;
+                layoutUpdate.annotations = originalAnnotations;
+            }} else {{
+                // Hide overlays
+                layoutUpdate.shapes = [];
+                layoutUpdate.annotations = [];
+            }}
+
+            Plotly.relayout(gd, layoutUpdate);
+            updateButtonStates();
+        }}
+
         // Setup event listeners
         document.addEventListener("DOMContentLoaded", function() {{
             // Mode buttons
@@ -378,6 +412,13 @@ def save_html_with_whois_on_click(
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.addEventListener('click', function() {{
                     switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // Overlay button
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    toggleOverlays();
                 }});
             }});
 
@@ -1163,6 +1204,12 @@ def save_html_nested_16(
             <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
         </div>
 
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <button id="btn-overlays" class="overlay-btn active" data-enabled="true">Overlays</button>
+        </div>
+
         <span class="hint">Click a cell to drill down to /24 view</span>
     </div>
 
@@ -1176,6 +1223,11 @@ def save_html_nested_16(
         var gd = document.getElementById("{div_id}");
         var currentMode = "primary";
         var currentColorscheme = "default";
+        var overlaysEnabled = true;
+
+        // Store original overlays (shapes and annotations)
+        var originalShapes = buttonData && buttonData.overlay_shapes ? buttonData.overlay_shapes : [];
+        var originalAnnotations = buttonData && buttonData.overlay_annotations ? buttonData.overlay_annotations : [];
 
         // Update button active states
         function updateButtonStates() {{
@@ -1184,6 +1236,9 @@ def save_html_nested_16(
             }});
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', overlaysEnabled);
             }});
         }}
 
@@ -1239,6 +1294,26 @@ def save_html_nested_16(
             updateButtonStates();
         }}
 
+        // Overlay toggling
+        function toggleOverlays() {{
+            if (!gd) return;
+            overlaysEnabled = !overlaysEnabled;
+
+            var layoutUpdate = {{}};
+            if (overlaysEnabled) {{
+                // Show overlays
+                layoutUpdate.shapes = originalShapes;
+                layoutUpdate.annotations = originalAnnotations;
+            }} else {{
+                // Hide overlays
+                layoutUpdate.shapes = [];
+                layoutUpdate.annotations = [];
+            }}
+
+            Plotly.relayout(gd, layoutUpdate);
+            updateButtonStates();
+        }}
+
         // Setup event listeners
         document.addEventListener("DOMContentLoaded", function() {{
             // Mode buttons
@@ -1252,6 +1327,13 @@ def save_html_nested_16(
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.addEventListener('click', function() {{
                     switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // Overlay button
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    toggleOverlays();
                 }});
             }});
 
@@ -1958,6 +2040,12 @@ def _build_consolidated_html_template(
             <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
         </div>
 
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <button id="btn-overlays" class="overlay-btn active" data-enabled="true">Overlays</button>
+        </div>
+
         <span class="view-indicator" id="view-indicator">/16 Overview</span>
     </div>
 
@@ -1973,9 +2061,14 @@ def _build_consolidated_html_template(
         var currentView = '16';
         var currentMode = 'primary';
         var currentColorscheme = 'default';
+        var overlaysEnabled = true;
         var allButtonData = {all_button_data_json};
         var parentCidrs = {parent_cidrs_json};
         var rdapBase = "{rdap_base}";
+
+        // Store original overlays for /16 view
+        var originalShapes16 = allButtonData['16'] && allButtonData['16'].overlay_shapes ? allButtonData['16'].overlay_shapes : [];
+        var originalAnnotations16 = allButtonData['16'] && allButtonData['16'].overlay_annotations ? allButtonData['16'].overlay_annotations : [];
 
         // Get all Plotly graph divs
         var gd16 = document.getElementById('ipmap_figure_16');
@@ -2084,6 +2177,9 @@ def _build_consolidated_html_template(
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
             }});
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', overlaysEnabled);
+            }});
         }}
 
         function switchMode(mode) {{
@@ -2106,6 +2202,26 @@ def _build_consolidated_html_template(
 
             // Re-apply current mode with new colorscheme
             switchMode(currentMode);
+        }}
+
+        // Overlay toggling (only for /16 view)
+        function toggleOverlays() {{
+            if (!gd16) return;
+            overlaysEnabled = !overlaysEnabled;
+
+            var layoutUpdate = {{}};
+            if (overlaysEnabled) {{
+                // Show overlays
+                layoutUpdate.shapes = originalShapes16;
+                layoutUpdate.annotations = originalAnnotations16;
+            }} else {{
+                // Hide overlays
+                layoutUpdate.shapes = [];
+                layoutUpdate.annotations = [];
+            }}
+
+            Plotly.relayout(gd16, layoutUpdate);
+            updateButtonStates();
         }}
 
         function updateFigure(gd, mode, buttonData) {{
@@ -2157,6 +2273,13 @@ def _build_consolidated_html_template(
             document.querySelectorAll('.color-btn').forEach(function(btn) {{
                 btn.addEventListener('click', function() {{
                     switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // Overlay button
+            document.querySelectorAll('.overlay-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    toggleOverlays();
                 }});
             }});
 

@@ -325,6 +325,32 @@ def build_24_heatmap(
 # ============================================================
 # /16 heatmap builder
 # ============================================================
+def add_vertical_overlay_label(
+        fig: go.Figure,
+        *,
+        x: float,
+        y: float,
+        text: str,
+        angle: int = 90,   # use -90 if you want it reading bottom→top
+        size: int = 5,
+        color: str = "#E0E0E0",
+):
+    fig.add_annotation(
+        x=x,
+        y=y,
+        xref="x",
+        yref="y",
+        text=text,
+        showarrow=False,
+        textangle=angle,
+        xanchor="left",
+        yanchor="top",
+        font=dict(
+            size=size,
+            color=color,
+            family="Open Sans, Verdana, Arial, sans-serif",
+        ),
+    )
 
 
 def build_16_heatmap(
@@ -350,9 +376,9 @@ def build_16_heatmap(
         fig = go.Figure()
         fig.update_layout(
             title=title or "IPv4 /16 Address Space (no data)",
-            paper_bgcolor="#111111",
-            plot_bgcolor="#111111",
-            font=dict(color="#EEEEEE"),
+            paper_bgcolor="#1F1F1F",
+            plot_bgcolor="#1F1F1F",
+            font=dict(color="#EEEEEE", family="Open Sans, Verdana, Arial, sans-serif"),
         )
         return fig
 
@@ -453,7 +479,7 @@ def build_16_heatmap(
         zmax_init = max(org_code_map.values()) if org_code_map else 1
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "col: %{customdata}<extra></extra>"
+            "Type: %{customdata}<extra></extra>"
         )
         colorbar_title_init = "Org index"
 
@@ -468,7 +494,8 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "col: %{customdata}<extra></extra>"
+            "Type: %{customdata}<br>"
+            "COUNT(DISTINCT(col)): %{z}<extra></extra>"
         )
         colorbar_title_init = "COUNT(DISTINCT(col))"
 
@@ -483,7 +510,8 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "col: %{customdata}<extra></extra>"
+            "Type: %{customdata}<br>"
+            "COUNT(col): %{z}<extra></extra>"
         )
         colorbar_title_init = "COUNT(col)"
 
@@ -553,21 +581,165 @@ def build_16_heatmap(
         ),
     )
 
+
+    fig.add_shape(
+        type="rect",
+        x0=-0.5, x1=255.5,
+        y0=-0.5, y1=255.5,
+        line=dict(color="#2e2e2e", width=1),
+        layer="above"
+    )
+
+    # Border around Loopback block (127/8)
+    fig.add_shape(
+        type="rect",
+        x0=126.5, x1=127.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Border around Private block (10/8)
+    fig.add_shape(
+        type="rect",
+        x0=9.5, x1=10.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Gov Block 11/8
+    fig.add_shape(
+        type="rect",
+        x0=10.5, x1=11.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Gov block 6/8 - 7/8
+    fig.add_shape(
+        type="rect",
+        x0=5.5, x1=7.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Gov block 21/8, 22/8
+    fig.add_shape(
+        type="rect",
+        x0=20.5, x1=22.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Gov block 26/8
+    fig.add_shape(
+        type="rect",
+        x0=25.5, x1=26.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Gov block 30/8
+    fig.add_shape(
+        type="rect",
+        x0=29.5, x1=30.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above"
+    )
+    # Border around multicast block (224-255)
+    fig.add_shape(
+        type="rect",
+        x0=223.5, x1=255.5,
+        y0=-0.5, y1=255.5,
+        fillcolor="rgba(120,170,255,0.22)",
+        line=dict(color="rgba(120,170,255,0.45)", width=1, dash="dot"),
+        layer="above",
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=5.0,
+        y=0.15,
+        text="U.S. Government (6/8–7/8)",
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=9.0,
+        y=0.15,
+        text="Private (10/8)",
+        size=4
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=10.0,
+        y=0.15,
+        text="U.S. Government (11/8)",
+        size=4
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=20.0,
+        y=0.15,
+        text="U.S. Government (21/8–22/8)",
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=25.0,
+        y=0.15,
+        text="U.S. Government (26/8)",
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=29.0,
+        y=0.15,
+        text="U.S. Government (30/8)",
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=126.0,
+        y=0.15,
+        text="Loopback (127/8)",
+        size=4
+    )
+    add_vertical_overlay_label(
+        fig,
+        x=223.15,
+        y=0.15,
+        text="Multicast % Reserved",
+        size=8
+    )
+
     # ------------------------------------------------------------------
-    # 6) Store button data in figure for later HTML injection
+    # 6) Store overlay shapes and annotations for toggle functionality
+    # ------------------------------------------------------------------
+    # Store the overlay shapes and annotations so they can be toggled in the HTML export
+    # Convert to dicts for JSON serialization
+    overlay_shapes = [s.to_plotly_json() for s in fig.layout.shapes]  # All shapes are overlays
+    overlay_annotations = [a.to_plotly_json() for a in fig.layout.annotations]  # All annotations are overlays
+
+    # ------------------------------------------------------------------
+    # 7) Store button data in figure for later HTML injection
     # ------------------------------------------------------------------
     # We'll attach the z-matrices and colorscales to the figure's metadata
     # so the export functions can create custom HTML buttons
     hover_primary = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
-        "col: %{customdata}<extra></extra>"
+        "Type: %{customdata}<extra></extra>"
     )
     hover_country = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
+        "Type: %{customdata}<br>"
         "COUNT(DISTINCT(col)): %{z}<extra></extra>"
     )
     hover_records = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
+        "Type: %{customdata}<br>"
         "COUNT(col): %{z}<extra></extra>"
     )
 
@@ -585,6 +757,8 @@ def build_16_heatmap(
         "org_code_map": org_code_map,
         "max_country": max(v for row in z_country for v in row if v is not None) if any(v is not None for row in z_country for v in row) else 0,
         "max_records": max(v for row in z_records for v in row if v is not None) if any(v is not None for row in z_records for v in row) else 0,
+        "overlay_shapes": overlay_shapes,
+        "overlay_annotations": overlay_annotations,
     }
 
     log.debug("Finished building /16 heatmap figure (buttons will be added during HTML export)")
