@@ -249,7 +249,12 @@ def map(
             )
 
         from ipmap.viz.heatmap import build_16_heatmap, build_24_heatmap
-        from ipmap.viz.export import save_html, save_html_nested_16, save_html_with_backlink_and_whois
+        from ipmap.viz.export import (
+            save_html,
+            save_html_nested_16,
+            save_html_with_backlink_and_whois,
+            save_html_consolidated,
+        )
 
         fig = build_16_heatmap(
             buckets_16,
@@ -283,19 +288,42 @@ def map(
 
 
     # --- NESTED MODE ---
-        # 1) save top-level /16 HTML with click handler
         if output.suffix.lower() not in (".html", ".htm"):
             output = output.with_suffix(".html")
 
-        save_html_nested_16(
-            fig,
-            output,
-            nested_basename=output.stem,
+        # 1) Prompt user BEFORE generating /24 figures (to avoid wasted computation)
+        consolidate = typer.confirm(
+            "Would you like to consolidate under a single .html?",
+            default=True
         )
 
-        # 2) generate one /24 HTML per populated /16
-        if buckets_24 is not None and not buckets_24.empty:
+        if buckets_24 is None or buckets_24.empty:
+            log.warning("No /24 data available for nested mode")
+            # Fall back to simple /16 export
+            if whois_on_click:
+                save_html_with_whois_on_click(fig, output, provider=whois_provider)
+            else:
+                save_html(fig, output)
+            typer.echo(f"Wrote visualization to {output}")
+            return
+
+        # Create a set of /16 blocks that have data (to avoid generating /24 views for empty /16s)
+        blocks_with_data = set(
+            zip(buckets_16['bucket_x'].astype(int), buckets_16['bucket_y'].astype(int))
+        )
+        log.info(f"Found {len(blocks_with_data)} /16 blocks with data")
+
+        if consolidate:
+            # 2a) CONSOLIDATE MODE: Generate all /24 figures in memory
+            log.info("Generating /24 views for consolidated HTML...")
+            list_of_24_views = []
+
             for (bx, by), sub in buckets_24.groupby(["bucket16_x", "bucket16_y"]):
+                # Skip this /16 block if it has no data in the /16 view
+                if (int(bx), int(by)) not in blocks_with_data:
+                    log.debug(f"Skipping /24 view for {bx}.{by}.0.0/16 (no data in /16 view)")
+                    continue
+
                 # build /24 figure for this /16
                 fig24 = build_24_heatmap(
                     sub,
@@ -304,18 +332,69 @@ def map(
                     title=f"/24s under {bx}.{by}.0.0/16",
                     parent_label=f"{bx}.{by}.0.0/16",
                 )
-                out_24 = output.with_name(f"{output.stem}_16_{bx}_{by}.html")
-                # include backlink to main /16 file (relative)
-                parent_cidr = f"{bx}.{by}.0.0/16"
-                save_html_with_backlink_and_whois(
-                    fig24,
-                    out_24,
-                    back_href=output.name,
-                    parent_cidr=parent_cidr,          # <<< important
-                    update_panel_on_click=True,       # /24 click updates panel (set False to pin to /16)
+                list_of_24_views.append({
+                    'bx': bx,
+                    'by': by,
+                    'figure': fig24,
+                    'parent_cidr': f"{bx}.{by}.0.0/16",
+                })
+
+            # Save consolidated HTML
+            save_html_consolidated(
+                fig_16=fig,
+                views_24=list_of_24_views,
+                output_path=output,
+                mode=mode,
+                colorscale_mode=colorscale_mode,
+            )
+            typer.echo(f"Wrote consolidated nested visualization to {output}")
+        else:
+            # 2b) FRAMES MODE: Generate individual /24 HTMLs in frames/ directory
+            frames_dir = output.parent / "frames"
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            log.info(f"Generating individual /24 frames in {frames_dir}...")
+
+            # Extract base name for frame files (use output stem, e.g. "dss" from "dss.html")
+            nested_basename = output.stem
+
+            # Save the main /16 view with nested navigation (clickable cells)
+            save_html_nested_16(
+                fig,
+                output,
+                nested_basename="frame",
+                frames_dir="frames",
+            )
+
+            # Generate and save each /24 view individually
+            count = 0
+            for (bx, by), sub in buckets_24.groupby(["bucket16_x", "bucket16_y"]):
+                # Skip this /16 block if it has no data in the /16 view
+                if (int(bx), int(by)) not in blocks_with_data:
+                    continue
+
+                # build /24 figure for this /16
+                fig24 = build_24_heatmap(
+                    sub,
+                    mode=mode,
+                    colorscale_mode=colorscale_mode,
+                    title=f"/24s under {bx}.{by}.0.0/16",
+                    parent_label=f"{bx}.{by}.0.0/16",
                 )
 
-        typer.echo(f"Wrote nested /16 + /24 visualizations to {output}")
+                # Save to frames directory with naming that matches nested_16 expectations
+                frame_path = frames_dir / f"frame_{bx}_{by}.html"
+                save_html_with_backlink_and_whois(
+                    fig24,
+                    frame_path,
+                    back_href=f"../{output.name}",
+                    parent_cidr=f"{bx}.{by}.0.0/16",
+                    update_panel_on_click=True,
+                )
+                count += 1
+
+            typer.echo(f"Wrote /16 view to {output}")
+            typer.echo(f"Wrote {count} /24 frames to {frames_dir}/")
+
         return
 
 

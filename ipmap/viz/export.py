@@ -1,6 +1,7 @@
 # ipmap/viz/export.py
 
 from __future__ import annotations
+import gzip
 import json
 from pathlib import Path
 from typing import Union
@@ -14,6 +15,74 @@ log = get_logger(__name__)
 
 
 PathLike = Union[str, Path]
+
+
+def _compress_button_data(button_data: dict | None) -> str:
+    """
+    Convert button data to minified JSON string for embedding in HTML.
+
+    This reduces file size by:
+    - Using compact JSON formatting (no whitespace)
+    - Rounding numeric values to reduce precision
+    """
+    if button_data is None:
+        return "null"
+
+    # Create a copy to avoid modifying the original
+    compressed = {}
+
+    for key, value in button_data.items():
+        if key in ("z_primary", "z_country", "z_records"):
+            # Round numeric arrays to 2 decimal places (or None)
+            if isinstance(value, list):
+                compressed[key] = [
+                    [round(v, 2) if isinstance(v, (int, float)) and v is not None else v
+                     for v in row]
+                    for row in value
+                ]
+            else:
+                compressed[key] = value
+        else:
+            compressed[key] = value
+
+    # Use compact JSON encoding (no spaces)
+    return json.dumps(compressed, separators=(',', ':'))
+
+
+def _write_html_with_compression(
+    html: str,
+    path: Path,
+    compress: bool = True
+) -> tuple[int, int]:
+    """
+    Write HTML to file, optionally with gzip compression.
+
+    Returns:
+        tuple of (original_size_bytes, written_size_bytes)
+    """
+    html_bytes = html.encode("utf-8")
+    original_size = len(html_bytes)
+
+    if compress:
+        # Write gzipped version
+        gz_path = path.with_suffix(path.suffix + ".gz")
+        with gzip.open(gz_path, "wb", compresslevel=9) as f:
+            f.write(html_bytes)
+        compressed_size = gz_path.stat().st_size
+
+        # Also write uncompressed for compatibility
+        path.write_bytes(html_bytes)
+
+        log.info(
+            f"Wrote {path} ({original_size / 1024 / 1024:.1f} MB) and "
+            f"{gz_path.name} ({compressed_size / 1024 / 1024:.1f} MB, "
+            f"{100 * (1 - compressed_size / original_size):.1f}% smaller)"
+        )
+        return original_size, compressed_size
+    else:
+        path.write_bytes(html_bytes)
+        log.info(f"Wrote {path} ({original_size / 1024 / 1024:.1f} MB)")
+        return original_size, original_size
 
 
 def save_html(fig: Figure, path: PathLike, include_plotlyjs: str = "cdn") -> None:
@@ -61,9 +130,9 @@ def save_html_with_whois_on_click(
     else:
         base = "https://rdap.org/ip/"
 
-    # Extract button data if available
+    # Extract button data if available (use compressed format)
     button_data = getattr(fig, '_button_data', None)
-    button_data_json = json.dumps(button_data) if button_data else "null"
+    button_data_json = _compress_button_data(button_data)
 
     # Generate the initial HTML with plotly
     html_content = pio.to_html(
@@ -198,9 +267,9 @@ def save_html_with_whois_on_click(
     <div class="toolbar">
         <div class="button-group">
             <span class="button-group-label">Mode:</span>
-            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
-            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
-            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">col</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count">COUNT(DISTINCT(col))</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count">COUNT(col)</button>
         </div>
 
         <div class="divider"></div>
@@ -350,8 +419,22 @@ def save_html_with_whois_on_click(
 </body>
 </html>"""
 
-    out_path.write_text(html, encoding="utf-8")
+    # Write HTML with optional compression
+    original_size, final_size = _write_html_with_compression(html, out_path, compress=True)
     log.debug("HTML (with whois-on-click and custom buttons) written successfully to %s", out_path)
+
+    # Check file size and warn if over 100MB
+    file_size_mb = final_size / (1024 * 1024)
+    if file_size_mb > 100:
+        log.warning(
+            f"Compressed file size is {file_size_mb:.1f} MB, which exceeds 100 MB. "
+            f"Consider using the .html.gz file for hosting (serves with Content-Encoding: gzip)."
+        )
+    elif original_size / (1024 * 1024) > 100:
+        log.info(
+            f"Original file was {original_size / (1024 * 1024):.1f} MB. "
+            f"Use the .html.gz file for better hosting performance."
+        )
 
 def save_html_with_backlink_and_whois(
         fig: Figure,
@@ -382,9 +465,9 @@ def save_html_with_backlink_and_whois(
     else:
         base = "https://rdap.org/ip/"
 
-    # Extract button data if available
+    # Extract button data if available (use compressed format)
     button_data = getattr(fig, '_button_data', None)
-    button_data_json = json.dumps(button_data) if button_data else "null"
+    button_data_json = _compress_button_data(button_data)
 
     # Ensure div id is stable so CSS works
     fig_html = pio.to_html(
@@ -613,9 +696,9 @@ def save_html_with_backlink_and_whois(
 
               <div class="button-group">
                 <span class="button-group-label">Mode:</span>
-                <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
-                <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
-                <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+                <button id="btn-primary" class="mode-btn active" data-mode="primary">col</button>
+                <button id="btn-country" class="mode-btn" data-mode="country_count">COUNT(DISTINCT(col))</button>
+                <button id="btn-records" class="mode-btn" data-mode="record_count">COUNT(col)</button>
               </div>
 
               <div class="divider"></div>
@@ -870,7 +953,8 @@ def save_html_with_backlink_and_whois(
           </body>
         </html>
     """
-    out_path.write_text(html, encoding="utf-8")
+    # Write HTML with compression
+    _write_html_with_compression(html, out_path, compress=True)
     log.debug("Nested /24 HTML (inside view) written successfully to %s", out_path)
 
 
@@ -927,19 +1011,25 @@ def save_html_nested_16(
         nested_basename: str,
         include_plotlyjs: str = "cdn",
         div_id: str = "ipmap_figure",
+        frames_dir: str = "frames",
 ) -> None:
     """
     Save the top-level /16 figure as HTML with custom buttons and inject JS that:
       - listens for plotly_click
-      - redirects to <nested_basename>_16_<bucket_x>_<bucket_y>.html
+      - redirects to <frames_dir>/<nested_basename>_<bucket_x>_<bucket_y>.html
+
+    Parameters
+    ----------
+    frames_dir : str
+        Subdirectory name where frame files are stored (default: "frames")
     """
     out_path = Path(path)
     log.info("Saving nested /16 HTML visualization to %s", out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Extract button data if available
+    # Extract button data if available (use compressed format)
     button_data = getattr(fig, '_button_data', None)
-    button_data_json = json.dumps(button_data) if button_data else "null"
+    button_data_json = _compress_button_data(button_data)
 
     # Generate the initial HTML with plotly
     html_content = pio.to_html(
@@ -1060,9 +1150,9 @@ def save_html_nested_16(
     <div class="toolbar">
         <div class="button-group">
             <span class="button-group-label">Mode:</span>
-            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
-            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
-            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">col</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count">COUNT(DISTINCT(col))</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count">COUNT(col)</button>
         </div>
 
         <div class="divider"></div>
@@ -1173,7 +1263,7 @@ def save_html_nested_16(
                     var x = p.x;
                     var y = p.y;
                     if (x === undefined || y === undefined) return;
-                    var url = "{nested_basename}_16_" + x + "_" + y + ".html";
+                    var url = "{frames_dir}/{nested_basename}_" + x + "_" + y + ".html";
                     window.location.href = url;
                 }});
             }}
@@ -1197,8 +1287,22 @@ def save_html_nested_16(
 </body>
 </html>"""
 
-    out_path.write_text(html, encoding="utf-8")
+    # Write HTML with compression
+    original_size, final_size = _write_html_with_compression(html, out_path, compress=True)
     log.debug("Nested /16 HTML written successfully to %s", out_path)
+
+    # Check file size and warn if over 100MB
+    file_size_mb = final_size / (1024 * 1024)
+    if file_size_mb > 100:
+        log.warning(
+            f"Compressed file size is {file_size_mb:.1f} MB, which exceeds 100 MB. "
+            f"Consider using the .html.gz file for hosting."
+        )
+    elif original_size / (1024 * 1024) > 100:
+        log.info(
+            f"Original file was {original_size / (1024 * 1024):.1f} MB. "
+            f"Use the .html.gz file for better hosting performance."
+        )
 
 def save_html_with_backlink(
         fig: Figure,
@@ -1214,9 +1318,9 @@ def save_html_with_backlink(
     log.info("Saving nested /24 HTML visualization to %s", out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Extract button data if available
+    # Extract button data if available (use compressed format)
     button_data = getattr(fig, '_button_data', None)
-    button_data_json = json.dumps(button_data) if button_data else "null"
+    button_data_json = _compress_button_data(button_data)
 
     # We want just the div for the figure, no full HTML wrapper.
     fig_html = pio.to_html(
@@ -1333,9 +1437,9 @@ def save_html_with_backlink(
 
         <div class="button-group">
             <span class="button-group-label">Mode:</span>
-            <button id="btn-primary" class="mode-btn active" data-mode="primary">Primary</button>
-            <button id="btn-country" class="mode-btn" data-mode="country_count"># Orgs</button>
-            <button id="btn-records" class="mode-btn" data-mode="record_count"># Prefixes</button>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">col</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count">COUNT(DISTINCT(col))</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count">COUNT(col)</button>
         </div>
 
         <div class="divider"></div>
@@ -1455,5 +1559,659 @@ def save_html_with_backlink(
 </body>
 </html>"""
 
-    out_path.write_text(html, encoding="utf-8")
+    # Write HTML with compression
+    _write_html_with_compression(html, out_path, compress=True)
     log.debug("Nested /24 HTML written successfully to %s", out_path)
+
+
+def save_html_consolidated(
+        fig_16: Figure,
+        views_24: list[dict],
+        output_path: PathLike,
+        mode: str = "primary",
+        colorscale_mode: str = "default",
+        include_plotlyjs: str = "cdn",
+        whois_provider: str = "rdap_org",
+) -> None:
+    """
+    Save a single HTML with /16 + all /24 views embedded.
+    Uses JavaScript show/hide to switch between views.
+
+    Parameters
+    ----------
+    fig_16 : Figure
+        The /16 heatmap figure.
+    views_24 : list[dict]
+        List of dicts with keys: 'bx', 'by', 'figure', 'parent_cidr'
+    output_path : PathLike
+        Output path for the consolidated HTML file.
+    mode : str
+        Initial mode ("primary", "country_count", "record_count").
+    colorscale_mode : str
+        Initial colorscale mode ("default", "neon").
+    include_plotlyjs : str
+        How to include Plotly.js ("cdn", "directory", "inline").
+    whois_provider : str
+        RDAP provider ("rdap_org" or "arin").
+    """
+    output_path = Path(output_path)
+    log.info(f"Saving consolidated HTML with {len(views_24)} /24 views to {output_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. Extract button data for /16
+    button_data_16 = getattr(fig_16, '_button_data', None)
+
+    # 2. Generate /16 Plotly HTML (div only)
+    html_16 = pio.to_html(
+        fig_16,
+        include_plotlyjs=False,
+        full_html=False,
+        div_id="ipmap_figure_16",
+        config={"responsive": True},
+    )
+
+    # 3. Generate all /24 Plotly HTMLs (divs only) + collect button data
+    views_24_html = []
+    for view in views_24:
+        bx, by = view['bx'], view['by']
+        fig = view['figure']
+        button_data = getattr(fig, '_button_data', None)
+
+        html = pio.to_html(
+            fig,
+            include_plotlyjs=False,
+            full_html=False,
+            div_id=f"ipmap_figure_24_{bx}_{by}",
+            config={"responsive": True},
+        )
+
+        views_24_html.append({
+            'bx': bx,
+            'by': by,
+            'html': html,
+            'button_data': button_data,
+            'parent_cidr': view['parent_cidr'],
+            'div_id': f"ipmap_figure_24_{bx}_{by}",
+        })
+
+    # 4. Build complete HTML document
+    html_doc = _build_consolidated_html_template(
+        html_16=html_16,
+        button_data_16=button_data_16,
+        views_24=views_24_html,
+        whois_provider=whois_provider,
+    )
+
+    # 5. Write to disk with compression
+    original_size, final_size = _write_html_with_compression(html_doc, output_path, compress=True)
+    log.info(f"Consolidated HTML written successfully to {output_path}")
+
+    # 6. Check file size and warn if over 100MB
+    file_size_mb = final_size / (1024 * 1024)
+    if file_size_mb > 100:
+        log.warning(
+            f"Compressed file size is {file_size_mb:.1f} MB, which exceeds 100 MB. "
+            f"Consider using the .html.gz file for hosting. "
+            f"Consolidated mode embeds all /24 views - use separate files for very large datasets."
+        )
+    elif original_size / (1024 * 1024) > 100:
+        log.info(
+            f"Original file was {original_size / (1024 * 1024):.1f} MB. "
+            f"Use the .html.gz file for better hosting performance."
+        )
+
+
+def _build_consolidated_html_template(
+        html_16: str,
+        button_data_16: dict | None,
+        views_24: list[dict],
+        whois_provider: str,
+) -> str:
+    """
+    Build the complete HTML document for consolidated nested view.
+
+    Parameters
+    ----------
+    html_16 : str
+        Plotly HTML for /16 figure (div only).
+    button_data_16 : dict | None
+        Button data for /16 figure (z-matrices, colorscales, etc.).
+    views_24 : list[dict]
+        List of dicts with keys: 'bx', 'by', 'html', 'button_data', 'parent_cidr', 'div_id'
+    whois_provider : str
+        RDAP provider ("rdap_org" or "arin").
+
+    Returns
+    -------
+    str
+        Complete HTML document.
+    """
+    # Base RDAP URL
+    if whois_provider == "arin":
+        rdap_base = "https://rdap.arin.net/registry/ip/"
+    else:
+        rdap_base = "https://rdap.org/ip/"
+
+    # Build button data JSON for all views (with compression for each view)
+    all_button_data = {}
+
+    # Compress /16 button data
+    if button_data_16:
+        all_button_data["16"] = json.loads(_compress_button_data(button_data_16))
+    else:
+        all_button_data["16"] = None
+
+    parent_cidrs = {}
+    for view in views_24:
+        view_id = f"24-{view['bx']}-{view['by']}"
+        # Compress each /24 button data
+        if view['button_data']:
+            all_button_data[view_id] = json.loads(_compress_button_data(view['button_data']))
+        else:
+            all_button_data[view_id] = None
+        parent_cidrs[view_id] = view['parent_cidr']
+
+    # Use compact JSON encoding
+    all_button_data_json = json.dumps(all_button_data, separators=(',', ':'))
+    parent_cidrs_json = json.dumps(parent_cidrs, separators=(',', ':'))
+
+    # Generate /24 view containers HTML
+    views_24_containers = ""
+    for view in views_24:
+        bx, by = view['bx'], view['by']
+        view_id = f"24-{bx}-{by}"
+        views_24_containers += f"""
+    <div id="view-{view_id}" class="view-container" style="display:none">
+        <div class="split-pane">
+            <div class="left">
+                {view['html']}
+            </div>
+            <div class="right">
+                <div class="panelHeader">
+                    <div>
+                        <div class="title" id="rdap-title-{view_id}">RDAP: {view['parent_cidr']}</div>
+                        <div class="sub">Click a /24 cell to update</div>
+                    </div>
+                    <button onclick="copyRdap()">Copy JSON</button>
+                </div>
+                <div class="panelBody" id="rdap-panel-{view_id}"></div>
+            </div>
+        </div>
+    </div>
+"""
+
+    # Build complete HTML
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>IPv4 Address Space Visualization (Consolidated Nested)</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #111111;
+            color: #EEEEEE;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }}
+
+        /* Toolbar */
+        .toolbar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }}
+
+        .button-group {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+
+        .button-group-label {{
+            font-size: 12px;
+            color: #999;
+            margin-right: 4px;
+        }}
+
+        .toolbar button, .toolbar a.button {{
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #ddd;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }}
+
+        .toolbar button:hover, .toolbar a.button:hover {{
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.25);
+        }}
+
+        .toolbar button.active {{
+            background: rgba(74, 179, 255, 0.2);
+            border-color: rgba(74, 179, 255, 0.5);
+            color: #4ab3ff;
+        }}
+
+        .divider {{
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.15);
+        }}
+
+        .view-indicator {{
+            font-size: 14px;
+            color: #4ab3ff;
+            margin-left: 16px;
+            font-weight: 500;
+        }}
+
+        #back-btn {{
+            display: none;
+        }}
+
+        /* View containers */
+        .view-container {{
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }}
+
+        /* /16 view styling */
+        #view-16 {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }}
+
+        #ipmap_figure_16 {{
+            width: 100% !important;
+            height: 100% !important;
+            max-width: min(100%, 100vh);
+            max-height: min(100%, 100vw);
+            aspect-ratio: 5 / 3;
+        }}
+
+        /* /24 view split-pane layout */
+        .split-pane {{
+            display: flex;
+            gap: 16px;
+            height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+        }}
+
+        .left {{
+            flex: 1 1 auto;
+            min-width: 650px;
+            min-height: 650px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            background: rgba(255,255,255,0.02);
+            overflow: hidden;
+            position: relative;
+        }}
+
+        .left > div {{
+            width: 100% !important;
+            height: 100% !important;
+        }}
+
+        .right {{
+            min-width: 520px;
+            min-height: 520px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            background: rgba(255,255,255,0.02);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .panelHeader {{
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }}
+
+        .panelHeader .title {{
+            font-size: 13px;
+            color: #eaeaea;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+
+        .panelHeader .sub {{
+            font-size: 11px;
+            color: #a9a9a9;
+        }}
+
+        .panelHeader button {{
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #eee;
+            padding: 6px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }}
+
+        .panelHeader button:hover {{
+            background: rgba(255,255,255,0.10);
+        }}
+
+        .panelBody {{
+            padding: 5px 6px;
+            overflow: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+            line-height: 1.35;
+            white-space: pre;
+            flex: 1;
+        }}
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <a href="#" id="back-btn" class="button" onclick="goBack(); return false;">&larr; Back to /16</a>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Mode:</span>
+            <button id="btn-primary" class="mode-btn active" data-mode="primary">col</button>
+            <button id="btn-country" class="mode-btn" data-mode="country_count">COUNT(DISTINCT(col))</button>
+            <button id="btn-records" class="mode-btn" data-mode="record_count">COUNT(col)</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="button-group">
+            <span class="button-group-label">Colors:</span>
+            <button id="btn-default" class="color-btn active" data-colorscheme="default">Default</button>
+            <button id="btn-neon" class="color-btn" data-colorscheme="neon">Neon</button>
+        </div>
+
+        <span class="view-indicator" id="view-indicator">/16 Overview</span>
+    </div>
+
+    <div id="view-16" class="view-container" style="display:block">
+        {html_16}
+    </div>
+
+{views_24_containers}
+
+    <script>
+    (function() {{
+        // Global state
+        var currentView = '16';
+        var currentMode = 'primary';
+        var currentColorscheme = 'default';
+        var allButtonData = {all_button_data_json};
+        var parentCidrs = {parent_cidrs_json};
+        var rdapBase = "{rdap_base}";
+
+        // Get all Plotly graph divs
+        var gd16 = document.getElementById('ipmap_figure_16');
+        var allGds = {{}};
+        allGds['16'] = gd16;
+
+        // Register all /24 graph divs
+        {''.join([f"allGds['24-{v['bx']}-{v['by']}'] = document.getElementById('{v['div_id']}');\n        " for v in views_24])}
+
+        // Navigation functions
+        function showView(viewId) {{
+            console.log('Switching to view:', viewId);
+
+            // Hide all views
+            document.querySelectorAll('.view-container').forEach(function(v) {{
+                v.style.display = 'none';
+            }});
+
+            // Show selected view
+            var viewElem = document.getElementById('view-' + viewId);
+            if (viewElem) {{
+                viewElem.style.display = viewId === '16' ? 'flex' : 'block';
+            }}
+
+            currentView = viewId;
+
+            // Update toolbar
+            var backBtn = document.getElementById('back-btn');
+            var viewIndicator = document.getElementById('view-indicator');
+
+            if (viewId === '16') {{
+                backBtn.style.display = 'none';
+                viewIndicator.textContent = '/16 Overview';
+            }} else {{
+                backBtn.style.display = 'block';
+                var cidr = parentCidrs[viewId] || viewId;
+                viewIndicator.textContent = 'Inside ' + cidr;
+
+                // Update RDAP panel
+                updateRdapPanel(viewId, cidr);
+            }}
+
+            // Trigger resize for Plotly
+            setTimeout(function() {{
+                var gd = allGds[viewId];
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }}, 100);
+        }}
+
+        function goBack() {{
+            showView('16');
+        }}
+
+        // RDAP fetching
+        function updateRdapPanel(viewId, cidr) {{
+            var panelId = 'rdap-panel-' + viewId;
+            var titleId = 'rdap-title-' + viewId;
+            var panel = document.getElementById(panelId);
+            var title = document.getElementById(titleId);
+
+            if (!panel) return;
+
+            // Extract IP from CIDR
+            var ip = cidr.split('/')[0];
+            var url = rdapBase + ip;
+
+            panel.textContent = 'Loading...';
+            if (title) title.textContent = 'RDAP: ' + cidr;
+
+            fetch(url)
+                .then(function(resp) {{
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return resp.json();
+                }})
+                .then(function(data) {{
+                    panel.textContent = JSON.stringify(data, null, 2);
+                }})
+                .catch(function(err) {{
+                    panel.textContent = 'Error: ' + err.message;
+                }});
+        }}
+
+        function copyRdap() {{
+            var viewId = currentView;
+            if (viewId === '16') return;
+
+            var panelId = 'rdap-panel-' + viewId;
+            var panel = document.getElementById(panelId);
+            if (!panel) return;
+
+            var text = panel.textContent;
+            navigator.clipboard.writeText(text).then(function() {{
+                console.log('RDAP JSON copied to clipboard');
+            }}).catch(function(err) {{
+                console.error('Failed to copy:', err);
+            }});
+        }}
+
+        // Mode switching
+        function updateButtonStates() {{
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.mode === currentMode);
+            }});
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.classList.toggle('active', btn.dataset.colorscheme === currentColorscheme);
+            }});
+        }}
+
+        function switchMode(mode) {{
+            currentMode = mode;
+            updateButtonStates();
+
+            // Update all figures
+            for (var viewId in allGds) {{
+                var gd = allGds[viewId];
+                var buttonData = allButtonData[viewId];
+                if (gd && buttonData) {{
+                    updateFigure(gd, mode, buttonData);
+                }}
+            }}
+        }}
+
+        function switchColorscheme(scheme) {{
+            currentColorscheme = scheme;
+            updateButtonStates();
+
+            // Re-apply current mode with new colorscheme
+            switchMode(currentMode);
+        }}
+
+        function updateFigure(gd, mode, buttonData) {{
+            if (!gd || !buttonData) return;
+
+            var update = {{}};
+
+            if (mode === 'primary') {{
+                update.z = [buttonData.z_primary];
+                update.colorscale = [currentColorscheme === 'neon' ?
+                    buttonData.primary_colorscale_neon :
+                    buttonData.primary_colorscale_default];
+                update.zmin = [0];
+                update.zmax = [Math.max(
+                    buttonData.org_code_map ? Math.max(...Object.values(buttonData.org_code_map)) : 0,
+                    1
+                )];
+                update.hovertemplate = [buttonData.hover_primary];
+                update['colorbar.title'] = ['Org index'];
+            }} else if (mode === 'country_count') {{
+                update.z = [buttonData.z_country];
+                update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(Math.min(buttonData.max_country || 10, 10), 1)];
+                update.hovertemplate = [buttonData.hover_country];
+                update['colorbar.title'] = ['Countries'];
+            }} else if (mode === 'record_count') {{
+                update.z = [buttonData.z_records];
+                update.colorscale = [[[0.0, "#08519c"], [0.25, "#3182bd"], [0.50, "#6baed6"], [0.75, "#bdd7e7"], [1.0, "#eff3ff"]]];
+                update.zmin = [0];
+                update.zmax = [Math.max(buttonData.max_records || 1, 1)];
+                update.hovertemplate = [buttonData.hover_records];
+                update['colorbar.title'] = ['Records'];
+            }}
+
+            Plotly.restyle(gd, update, [0]);
+        }}
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Mode buttons
+            document.querySelectorAll('.mode-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchMode(this.dataset.mode);
+                }});
+            }});
+
+            // Color buttons
+            document.querySelectorAll('.color-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    switchColorscheme(this.dataset.colorscheme);
+                }});
+            }});
+
+            // /16 click handler - navigate to /24 view
+            if (gd16 && gd16.on) {{
+                gd16.on('plotly_click', function(evt) {{
+                    if (!evt || !evt.points || !evt.points.length) return;
+                    var p = evt.points[0];
+                    var x = p.x;
+                    var y = p.y;
+                    if (x === undefined || y === undefined) return;
+
+                    var viewId = '24-' + x + '-' + y;
+                    showView(viewId);
+                }});
+            }}
+
+            // /24 click handlers - update RDAP panel
+            {''.join([f'''
+            (function() {{
+                var gd = document.getElementById('{v['div_id']}');
+                if (gd && gd.on) {{
+                    gd.on('plotly_click', function(evt) {{
+                        if (!evt || !evt.points || !evt.points.length) return;
+                        var p = evt.points[0];
+                        var x = p.x;
+                        var y = p.y;
+                        if (x === undefined || y === undefined) return;
+
+                        // Calculate /24 CIDR: bx.by.x.0/24
+                        var cidr = '{v['bx']}' + '.' + '{v['by']}' + '.' + x + '.0/24';
+                        updateRdapPanel('24-{v['bx']}-{v['by']}', cidr);
+                    }});
+                }}
+            }})();
+            ''' for v in views_24])}
+
+            // Window resize
+            window.addEventListener('resize', function() {{
+                var gd = allGds[currentView];
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }});
+
+            // Initial resize
+            setTimeout(function() {{
+                if (gd16 && window.Plotly) {{
+                    Plotly.Plots.resize(gd16);
+                }}
+            }}, 100);
+        }});
+    }})();
+    </script>
+</body>
+</html>"""
+
+    return html

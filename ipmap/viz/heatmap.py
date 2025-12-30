@@ -196,9 +196,9 @@ def build_24_heatmap(
         zmax_init = max(max(org_code_map.values()) if org_code_map else 0, 1)
         hover_init = (
             "Bucket: %{text}<br>"
-            "Primary org index: %{z}<extra></extra>"
+            "col: %{z}<extra></extra>"
         )
-        colorbar_title_init = "Org index"
+        colorbar_title_init = "col"
     elif mode == "country_count":
         z_init = z_country
         colorscale_init = COUNT_COLORSCALE
@@ -206,9 +206,9 @@ def build_24_heatmap(
         zmax_init = max(min(max_country, MAX_COUNT_FOR_COLOR), 1)
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "# unique orgs: %{z}<extra></extra>"
+            "COUNT(col): %{z}<extra></extra>"
         )
-        colorbar_title_init = "# orgs"
+        colorbar_title_init = "COUNT(DISTINCT(col))"
 
     else:  # record_count
         z_init = z_records
@@ -217,9 +217,9 @@ def build_24_heatmap(
         zmax_init = max(max_records, 1)
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "# prefixes: %{z}<extra></extra>"
+            "COUNT(col): %{z}<extra></extra>"
         )
-        colorbar_title_init = "# prefixes"
+        colorbar_title_init = "COUNT(col)"
 
     # We want each cell labeled with its actual a.b.c prefix
     # Build a text grid parallel to z_*
@@ -297,10 +297,10 @@ def build_24_heatmap(
     # --------------------------------------------------------------
     hover_primary = (
         "Bucket: %{text}<br>"
-        "Primary org index: %{z}<extra></extra>"
+        "col: %{z}<extra></extra>"
     )
-    hover_country = "Bucket: %{text}.0/24<br># unique orgs: %{z}<extra></extra>"
-    hover_records = "Bucket: %{text}.0/24<br># prefixes: %{z}<extra></extra>"
+    hover_country = "Bucket: %{text}.0/24<br>COUNT(DISTINCT(col)): %{z}<extra></extra>"
+    hover_records = "Bucket: %{text}.0/24<br>COUNT(col): %{z}<extra></extra>"
 
     # Store button configuration data as custom attributes
     # These will be used by export functions to generate custom HTML buttons
@@ -453,7 +453,7 @@ def build_16_heatmap(
         zmax_init = max(org_code_map.values()) if org_code_map else 1
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "BehaviorType: %{customdata}<extra></extra>"
+            "col: %{customdata}<extra></extra>"
         )
         colorbar_title_init = "Org index"
 
@@ -468,9 +468,9 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "BehaviorType: %{customdata}<extra></extra>"
+            "col: %{customdata}<extra></extra>"
         )
-        colorbar_title_init = "# orgs"
+        colorbar_title_init = "COUNT(DISTINCT(col))"
 
     else:  # record_count
         z_init = z_records
@@ -483,9 +483,9 @@ def build_16_heatmap(
 
         hover_init = (
             "Bucket: %{x}.%{y}.0.0/16<br>"
-            "BehaviorType: %{customdata}<extra></extra>"
+            "col: %{customdata}<extra></extra>"
         )
-        colorbar_title_init = "# prefixes"
+        colorbar_title_init = "COUNT(col)"
 
     # ------------------------------------------------------------------
     # 5) Build initial Heatmap trace
@@ -507,7 +507,7 @@ def build_16_heatmap(
         colorscale=colorscale_init,
         zmin=zmin_init,
         zmax=zmax_init,
-        colorbar=dict(title="BehaviorType"),
+        colorbar=dict(title="col"),
     )
 
     fig_title = title or "IPv4 /16 Address Space"
@@ -560,15 +560,15 @@ def build_16_heatmap(
     # so the export functions can create custom HTML buttons
     hover_primary = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
-        "Primary org index: %{z}<extra></extra>"
+        "col: %{customdata}<extra></extra>"
     )
     hover_country = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
-        "# unique orgs: %{z}<extra></extra>"
+        "COUNT(DISTINCT(col)): %{z}<extra></extra>"
     )
     hover_records = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
-        "# prefixes: %{z}<extra></extra>"
+        "COUNT(col): %{z}<extra></extra>"
     )
 
     # Store button configuration data as custom attributes
