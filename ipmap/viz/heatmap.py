@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Literal
+from typing import List, Literal, TypedDict, Any
 
 import numpy as np
 import pandas as pd
@@ -322,6 +322,7 @@ def build_24_heatmap(
     log.debug("Finished building /24 heatmap figure for %s", parent_label)
     return fig
 
+
 # ============================================================
 # /16 heatmap builder
 # ============================================================
@@ -353,11 +354,192 @@ def add_vertical_overlay_label(
     )
 
 
+class Heatmap16Payload(TypedDict):
+    heatmap: go.Heatmap
+    fig_title: str
+    z_primary: list[list[int | None]]
+    z_country: list[list[int | None]]
+    z_records: list[list[int | None]]
+    primary_colorscale_default: list
+    primary_colorscale_neon: list
+    org_code_map: dict[str, int]
+    hover_primary: str
+    hover_country: str
+    hover_records: str
+
+
+def build_16_payload(
+        df_buckets_16: pd.DataFrame,
+        mode: HeatmapMode = "primary",
+        colorscale_mode: ColorscaleMode = "default",
+        title: str | None = None,
+) -> dict:
+    if df_buckets_16.empty:
+        raise ValueError("build_16_payload received empty df_buckets_16")
+
+    required_base = {"bucket_x", "bucket_y", "num_prefixes", "primary_org", "num_countries"}
+    missing = required_base - set(df_buckets_16.columns)
+    if missing:
+        raise ValueError(f"df_buckets_16 is missing required columns: {missing}")
+
+    if mode == "count":
+        mode = "country_count"
+
+    # 1) Axes
+    x_vals = list(range(256))
+    y_vals = list(range(256))
+    x_to_idx = {x: i for i, x in enumerate(x_vals)}
+    y_to_idx = {y: i for i, y in enumerate(y_vals)}
+
+    # 2) Matrices
+    z_primary = [[None for _ in x_vals] for _ in y_vals]
+    z_country = [[None for _ in x_vals] for _ in y_vals]
+    z_records = [[None for _ in x_vals] for _ in y_vals]
+
+    # 3) Orgs -> codes + palettes
+    orgs = df_buckets_16["primary_org"].dropna().astype(str).unique()
+    orgs_sorted = sorted(orgs)
+    org_code_map = {org: idx for idx, org in enumerate(orgs_sorted)}
+    n_orgs = len(org_code_map)
+
+    if n_orgs == 0 and mode == "primary":
+        mode = "record_count"
+
+    if colorscale_mode == "neon":
+        primary_palette = _build_neon_palette(n_orgs)
+    else:
+        primary_palette = _build_default_palette(n_orgs)
+    primary_colorscale_default = _build_discrete_colorscale(primary_palette)
+
+    primary_palette_neon = _build_neon_palette(n_orgs)
+    primary_colorscale_neon = _build_discrete_colorscale(primary_palette_neon)
+
+    # 4) Fill matrices
+    for _, row in df_buckets_16.iterrows():
+        bx = int(row["bucket_x"])
+        by = int(row["bucket_y"])
+        xi = x_to_idx[bx]
+        yi = y_to_idx[by]
+
+        org = row["primary_org"]
+        if org is None or (isinstance(org, float) and np.isnan(org)):
+            z_primary[yi][xi] = None
+        else:
+            z_primary[yi][xi] = org_code_map.get(str(org))
+
+        z_country[yi][xi] = int(row["num_countries"])
+        z_records[yi][xi] = int(row["num_prefixes"])
+
+    # 5) Choose initial mode settings
+    if mode not in ("primary", "country_count", "record_count"):
+        mode = "primary"
+
+    if mode == "primary":
+        z_init = z_primary
+        colorscale_init = primary_colorscale_default
+        zmin_init = 0
+        zmax_init = max(org_code_map.values()) if org_code_map else 1
+        hover_init = (
+            "Bucket: %{x}.%{y}.0.0/16<br>"
+            "Type: %{customdata}<extra></extra>"
+        )
+        colorbar_title_init = "Org index"
+
+    elif mode == "country_count":
+        z_init = z_country
+        colorscale_init = COUNT_COLORSCALE
+        zmin_init = 0
+        vals = [v for row in z_country for v in row if v is not None]
+        max_val = max(vals) if vals else 0
+        zmax_init = max(min(max_val, MAX_COUNT_FOR_COLOR), 1)
+        hover_init = (
+            "Bucket: %{x}.%{y}.0.0/16<br>"
+            "Type: %{customdata}<br>"
+            "COUNT(DISTINCT(col)): %{z}<extra></extra>"
+        )
+        colorbar_title_init = "COUNT(DISTINCT(col))"
+
+    else:
+        z_init = z_records
+        colorscale_init = COUNT_COLORSCALE
+        zmin_init = 0
+        vals = [v for row in z_records for v in row if v is not None]
+        max_val = max(vals) if vals else 0
+        zmax_init = max(max_val, 1)
+        hover_init = (
+            "Bucket: %{x}.%{y}.0.0/16<br>"
+            "Type: %{customdata}<br>"
+            "COUNT(col): %{z}<extra></extra>"
+        )
+        colorbar_title_init = "COUNT(col)"
+
+    # 6) Label grid
+    label_grid = [[None for _ in x_vals] for _ in y_vals]
+    for _, row in df_buckets_16.iterrows():
+        bx = int(row["bucket_x"])
+        by = int(row["bucket_y"])
+        label_grid[y_to_idx[by]][x_to_idx[bx]] = row["primary_org"]
+
+    # ✅ Define heatmap HERE (this is what you were missing)
+    heatmap = go.Heatmap(
+        z=z_init,
+        x=x_vals,
+        y=y_vals,
+        customdata=label_grid,
+        hovertemplate=hover_init,
+        colorscale=colorscale_init,
+        zmin=zmin_init,
+        zmax=zmax_init,
+        colorbar=dict(title="col"),
+    )
+
+    fig_title = title or "IPv4 /16 Address Space"
+
+    hover_primary = (
+        "Bucket: %{x}.%{y}.0.0/16<br>"
+        "Type: %{customdata}<extra></extra>"
+    )
+    hover_country = (
+        "Bucket: %{x}.%{y}.0.0/16<br>"
+        "Type: %{customdata}<br>"
+        "COUNT(DISTINCT(col)): %{z}<extra></extra>"
+    )
+    hover_records = (
+        "Bucket: %{x}.%{y}.0.0/16<br>"
+        "Type: %{customdata}<br>"
+        "COUNT(col): %{z}<extra></extra>"
+    )
+
+    return {
+        "heatmap": heatmap,
+        "fig_title": fig_title,
+        "x_vals": x_vals,
+        "y_vals": y_vals,
+        "label_grid": label_grid,
+        "z_primary": z_primary,
+        "z_country": z_country,
+        "z_records": z_records,
+        "primary_colorscale_default": primary_colorscale_default,
+        "primary_colorscale_neon": primary_colorscale_neon,
+        "org_code_map": org_code_map,
+        "hover_primary": hover_primary,
+        "hover_country": hover_country,
+        "hover_records": hover_records,
+        "zmin_init": zmin_init,
+        "zmax_init": zmax_init,
+        "colorscale_init": colorscale_init,
+        "hover_init": hover_init,
+        "colorbar_title_init": colorbar_title_init,
+    }
+
+
+
 def build_16_heatmap(
         df_buckets_16: pd.DataFrame,
         mode: HeatmapMode = "primary",
         colorscale_mode: ColorscaleMode = "default",
         title: str | None = None,
+        as_trace: bool = False
 ) -> go.Figure:
     """
     Build a Plotly heatmap for IPv4 /16 buckets.
@@ -538,9 +720,27 @@ def build_16_heatmap(
         colorbar=dict(title="col"),
     )
 
-    fig_title = title or "IPv4 /16 Address Space"
-    fig = go.Figure(data=[heatmap])
+    payload = build_16_payload(df_buckets_16, mode=mode, colorscale_mode=colorscale_mode, title=title)
 
+    if as_trace:
+        return payload["heatmap"]
+
+    fig = go.Figure(data=[payload["heatmap"]])
+    detail_graph(
+        fig,
+        None,
+        payload["z_primary"],
+        payload["z_country"],
+        payload["z_records"],
+        payload["primary_colorscale_default"],
+        payload["primary_colorscale_neon"],
+        payload["org_code_map"],
+    )
+    return fig
+
+
+
+def detail_graph(fig: go.Figure, fig_title, z_primary, z_country, z_records, primary_colorscale_default, primary_colorscale_neon, org_code_map):
     fig.update_layout(
         title=fig_title,
         autosize=True,
@@ -715,19 +915,6 @@ def build_16_heatmap(
         size=8
     )
 
-    # ------------------------------------------------------------------
-    # 6) Store overlay shapes and annotations for toggle functionality
-    # ------------------------------------------------------------------
-    # Store the overlay shapes and annotations so they can be toggled in the HTML export
-    # Convert to dicts for JSON serialization
-    overlay_shapes = [s.to_plotly_json() for s in fig.layout.shapes]  # All shapes are overlays
-    overlay_annotations = [a.to_plotly_json() for a in fig.layout.annotations]  # All annotations are overlays
-
-    # ------------------------------------------------------------------
-    # 7) Store button data in figure for later HTML injection
-    # ------------------------------------------------------------------
-    # We'll attach the z-matrices and colorscales to the figure's metadata
-    # so the export functions can create custom HTML buttons
     hover_primary = (
         "Bucket: %{x}.%{y}.0.0/16<br>"
         "Type: %{customdata}<extra></extra>"
@@ -742,9 +929,11 @@ def build_16_heatmap(
         "Type: %{customdata}<br>"
         "COUNT(col): %{z}<extra></extra>"
     )
-
     # Store button configuration data as custom attributes
     # These will be used by export functions to generate custom HTML buttons
+    overlay_shapes = [s.to_plotly_json() for s in fig.layout.shapes]  # All shapes are overlays
+    overlay_annotations = [a.to_plotly_json() for a in fig.layout.annotations]  # All annotations are overlays
+
     fig._button_data = {
         "z_primary": z_primary,
         "z_country": z_country,
@@ -762,6 +951,4 @@ def build_16_heatmap(
     }
 
     log.debug("Finished building /16 heatmap figure (buttons will be added during HTML export)")
-    return fig
-
 

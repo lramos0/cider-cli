@@ -18,6 +18,7 @@ from ipmap.processing.stats import attach_primary_and_counts
 from ipmap.viz.heatmap import build_16_heatmap
 from ipmap.viz.export import save_html, save_png, save_html_with_whois_on_click
 from ipmap.utils.logging import get_logger
+from ipmap.utils.date_detection import detect_date_column, parse_date_column, get_sorted_time_periods
 
 app = typer.Typer(help="IPv4 address space visualization (pcap, geofeed CSV, MaxMind CSV).")
 
@@ -216,8 +217,104 @@ def map(
     print("IPv4-ish vs IPv6-ish counts (based on ':' presence):")
     print(df["ip"].str.contains(":", na=True).value_counts())
 
+    # 2.5) Check for time-series mode (only for cider kind, non-nested)
+    timeseries_mode = None
+    if kind == "cider" and not nested:
+        # First check if record_date column exists (populated by CiderCsvSource)
+        date_col = None
+        if 'record_date' in df.columns and df['record_date'].notna().any():
+            date_col = 'record_date'
+            log.info("Found record_date column from CSV")
+        else:
+            # Fallback: try to detect other date columns
+            date_col = detect_date_column(df)
+
+        if date_col:
+            factor_date = typer.confirm(
+                f"\nDetected date column '{date_col}'. Would you like your graph to factor in date?",
+                default=False
+            )
+            if factor_date:
+                # Prompt for comparison mode
+                typer.echo("\nTime-series visualization modes:")
+                typer.echo("  1) Comparing dates - use same colorscale range across all time periods (for direct comparison)")
+                typer.echo("  2) Highlighting data hydration - use independent colorscales per time period (to emphasize density changes)")
+                mode_choice = typer.prompt(
+                    "\nChoose mode",
+                    type=int,
+                    default=1
+                )
+                timeseries_mode = "compare" if mode_choice == 1 else "hydration"
+
+                # Parse date column and add time_period column
+                df = parse_date_column(df, date_col)
+                log.info(f"Enabled time-series mode: {timeseries_mode}")
+
     # 3) bucket + stats depending on view
     if view == "/16":
+        # Handle time-series mode
+        if timeseries_mode:
+            from ipmap.viz.export import save_html_timeseries
+            from ipmap.viz.heatmap import build_16_heatmap
+
+            time_periods = get_sorted_time_periods(df)
+            log.info(f"Processing {len(time_periods)} time periods: {time_periods}")
+
+            timeseries_data: list[dict] = []
+
+            for period in time_periods:
+                period_df = df[df["time_period"] == period].copy()
+                log.info(f"Processing time period {period}: {len(period_df)} records")
+
+                # --- /16 bucketing ---
+                period_buckets = bucket_16(
+                    period_df,
+                    ip_col="ip",
+                    org_col="org",
+                    extra_group_cols=["source", "snapshot_date"],
+                )
+
+                period_buckets = attach_primary_and_counts(
+                    period_buckets,
+                    orgs_col="orgs",
+                    primary_col="primary_org",
+                    count_col="num_countries",
+                )
+
+                # --- IMPORTANT ---
+                # Build a REAL figure so detail_graph() runs and
+                # fig._button_data is populated correctly
+                fig = build_16_heatmap(
+                    period_buckets,
+                    mode=mode,
+                    colorscale_mode=colorscale_mode,
+                    title=f"CIDR Map - {period}",
+                )
+
+                timeseries_data.append({
+                    "period": str(period),
+                    "figure": fig,
+                    "buckets": period_buckets,
+                    "record_count": len(period_df),
+                })
+
+            # --- Export ---
+            output = output.expanduser().resolve()
+            if output.suffix.lower() not in (".html", ".htm"):
+                output = output.with_suffix(".html")
+
+            save_html_timeseries(
+                timeseries_data=timeseries_data,
+                output_path=output,
+                mode=mode,
+                colorscale_mode=colorscale_mode,
+                comparison_mode=(timeseries_mode == "compare"),
+                include_plotlyjs="cdn",
+            )
+
+            typer.echo(f"Wrote time-series visualization to {output}")
+            return
+    # Normal (non-time-series) mode
         buckets_16 = bucket_16(
             df,
             ip_col="ip",

@@ -2338,3 +2338,591 @@ def _build_consolidated_html_template(
 </html>"""
 
     return html
+
+
+def save_html_timeseries(
+        timeseries_data: list[dict],
+        output_path: PathLike,
+        mode: str = "primary",
+        colorscale_mode: str = "default",
+        comparison_mode: bool = True,
+        include_plotlyjs: str = "cdn",
+) -> None:
+    """
+    Save a time-series slideshow HTML with auto-cycling and manual controls.
+
+    Parameters
+    ----------
+    timeseries_data : list[dict]
+        List of dicts, each containing:
+          - 'period': str (e.g. "2025-01")
+          - 'figure': Figure object
+          - 'buckets': DataFrame
+          - 'record_count': int
+    output_path : PathLike
+        Output HTML file path
+    mode : str
+        Initial visualization mode
+    colorscale_mode : str
+        Colorscale mode
+    comparison_mode : bool
+        If True, use same colorscale range across all periods (for comparison)
+        If False, use independent colorscales per period (to highlight hydration)
+    include_plotlyjs : str
+        Plotly.js inclusion mode
+    """
+    out_path = Path(output_path)
+    log.info(f"Saving time-series visualization to {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not timeseries_data:
+        raise ValueError("No time-series data provided")
+
+    # Generate HTML divs for each time period
+    period_divs = []
+    button_data_list = []
+
+    for idx, data in enumerate(timeseries_data):
+        period = data['period']
+        fig = data['figure']
+        record_count = data.get('record_count', 0)
+
+        div_id = f"ipmap_figure_{idx}"
+
+        # Get button data from figure
+        button_data = getattr(fig, '_button_data', None)
+        button_data_list.append(json.loads(_compress_button_data(button_data)))
+        fig.update_layout(updatemenus=[], sliders=[])
+        fig.frames = []  # if you used frames anywhere
+
+        # Generate Plotly HTML for this figure
+        fig_html = pio.to_html(
+            fig,
+            include_plotlyjs=False,  # We'll include it once in the header
+            full_html=False,
+            div_id=div_id,
+            config={"responsive": True},
+        )
+
+        # Wrap in a container div (initially hidden except first)
+        active_class = "active" if idx == 0 else ""
+        period_divs.append(f"""
+        <div id="period_{idx}" class="period-container {active_class}">
+            <div class="period-info">
+                <span class="period-label">{period}</span>
+                <span class="record-count">{record_count:,} records</span>
+            </div>
+            <div class="plot-wrapper">
+                {fig_html}
+            </div>
+        </div>
+        """)
+
+    # Generate period buttons
+    period_buttons = []
+    for idx, data in enumerate(timeseries_data):
+        period = data['period']
+        active_class = "active" if idx == 0 else ""
+        period_buttons.append(
+            f'<button class="period-btn {active_class}" onclick="showPeriod({idx})">{period}</button>'
+        )
+
+    periods_json = json.dumps([d['period'] for d in timeseries_data])
+    button_data_array = json.dumps(button_data_list, separators=(',', ':'))
+
+    # Build complete HTML
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>IPv4 /16 Address Space Time-Series Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background: #111111;
+            color: #EEEEEE;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }}
+
+        .toolbar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 90px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            padding: 8px 16px;
+        }}
+
+        .toolbar-row {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }}
+
+        .button-group {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+
+        .button-group-label {{
+            font-size: 12px;
+            color: #999;
+            margin-right: 4px;
+        }}
+
+        .toolbar button {{
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #ddd;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }}
+
+        .toolbar button:hover {{
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.25);
+        }}
+
+        .toolbar button.active {{
+            background: rgba(74, 179, 255, 0.2);
+            border-color: rgba(74, 179, 255, 0.5);
+            color: #4ab3ff;
+        }}
+
+        .period-btn {{
+            font-size: 11px !important;
+            padding: 4px 8px !important;
+        }}
+
+        .divider {{
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.15);
+        }}
+        
+        /* Let Plotly own its own layout */
+        [id^="ipmap_figure_"] {{
+            width: 100% !important;
+            height: 95vh !important;
+            display: block !important;
+        }}
+
+        
+        /* Each period is stacked in the same spot */
+        .period-container{{
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;            /* keep it measurable */
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }}
+        
+        /* active slide */
+        .period-container.active{{
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }}
+
+
+        
+        /* Content area gives the plot its space */
+        #content {{
+            position: fixed;
+            top: 100px;              /* toolbar height */
+            left: 0;
+            right: 0;
+            bottom: 0;
+        
+            padding: 0;              /* IMPORTANT */
+            box-sizing: border-box;
+        
+            display: block;          /* NOT flex */
+        }}
+
+
+
+        .slideshow-controls {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .progress-bar {{
+            width: 60px;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }}
+
+        .progress-fill {{
+            height: 100%;
+            background: rgba(74, 179, 255, 0.8);
+            width: 0%;
+            transition: width 0.1s linear;
+        }}
+
+        #content {{
+            position: fixed;
+            top: 100px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }}
+
+        .period-container {{
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .period-info {{
+            position: relative;   /* ← REQUIRED */
+            z-index: 9999;
+            display: flex;
+            justify-content: space-between !important;
+            align-items: center;
+            padding: 4px 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            margin-bottom: -5vh;
+            pointer-events: none;
+        }}
+        .plot-wrapper {{
+            flex: 1 1 auto;      /* TAKE ALL REMAINING SPACE */
+            min-height: 0;       /* CRITICAL for flex + SVG */
+            width: 100%;
+        }}
+
+
+        .period-label {{
+            font-size: 18px;
+            font-weight: 600;
+            color: #4ab3ff;
+        }}
+
+        .record-count {{
+            font-size: 14px;
+            color: #999;
+        }}
+
+        .toast {{
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            background: rgba(74, 179, 255, 0.9);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }}
+
+        .toast.show {{
+            opacity: 1;
+        }}
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="toolbar-row">
+            <div class="button-group">
+                <span class="button-group-label">Mode:</span>
+                <button id="btn_primary" class="active" onclick="switchMode('primary')">col</button>
+                <button id="btn_country_count" onclick="switchMode('country_count')">COUNT(DISTINCT(col))</button>
+                <button id="btn_record_count" onclick="switchMode('record_count')">COUNT(col)</button>
+            </div>
+            <div class="divider"></div>
+            <div class="divider"></div>
+            <div class="button-group">
+                <button id="btn_overlays" class="active" onclick="toggleOverlays()">Overlays</button>
+            </div>
+            <div class="button-group">
+                <span class="button-group-label">Colors:</span>
+                <button id="btn_default" class="active" onclick="switchColorscale('default')">Default</button>
+                <button id="btn_neon" onclick="switchColorscale('neon')">Neon</button>
+            </div>
+            <div class="divider"></div>
+            <div class="slideshow-controls">
+                <button id="btn_prev" onclick="prevPeriod()">◀ Prev</button>
+                <button id="btn_play_pause" onclick="togglePlayPause()">⏸ Pause</button>
+                <button id="btn_next" onclick="nextPeriod()">Next ▶</button>
+                <div class="progress-bar">
+                    <div id="progress_fill" class="progress-fill"></div>
+                </div>
+            </div>
+        </div>
+        <div class="toolbar-row">
+            <div class="button-group">
+                <span class="button-group-label">Time Periods:</span>
+                {' '.join(period_buttons)}
+            </div>
+        </div>
+    </div>
+
+    <div id="content">
+        {''.join(period_divs)}
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+    // Global state
+    const periods = {periods_json};
+    const buttonDataArray = {button_data_array};
+    let currentPeriodIndex = 0;
+    let currentMode = '{mode}';
+    let currentColorscale = '{colorscale_mode}';
+    let isPlaying = true;
+    let slideshowInterval = null;
+    let progressInterval = null;
+    const SLIDE_DURATION = 5000; 
+    const PROGRESS_UPDATE_INTERVAL = 50; // Update progress every 50ms
+
+    // Show specific period
+    function showPeriod(index) {{
+      if (index < 0 || index >= periods.length) return;
+    
+      document.querySelectorAll('.period-container').forEach(el => {{
+        el.classList.remove('active');
+      }});
+    
+      document.getElementById(`period_${{index}}`).classList.add('active');
+    
+      document.querySelectorAll('.period-btn').forEach((btn, i) => {{
+        btn.classList.toggle('active', i === index);
+      }});
+    
+      currentPeriodIndex = index;
+      resetProgress();
+    
+      // Resize after layout is applied
+      requestAnimationFrame(() => {{
+        requestAnimationFrame(() => {{
+          const gd = document.getElementById(`ipmap_figure_${{index}}`);
+          if (gd && window.Plotly) {{
+            Plotly.relayout(gd, {{ autosize: true }});
+            Plotly.Plots.resize(gd);
+          }}
+        }});
+      }});
+    }}
+
+
+    function nextPeriod() {{
+        const nextIndex = (currentPeriodIndex + 1) % periods.length;
+        showPeriod(nextIndex, true);
+        if (!isPlaying) {{
+            togglePlayPause();
+        }}
+    }}
+
+    function prevPeriod() {{
+        const prevIndex = (currentPeriodIndex - 1 + periods.length) % periods.length;
+        showPeriod(prevIndex, true);
+        if (!isPlaying) {{
+            togglePlayPause();
+        }}
+    }}
+
+    function togglePlayPause() {{
+        isPlaying = !isPlaying;
+        const btn = document.getElementById('btn_play_pause');
+
+        if (isPlaying) {{
+            btn.textContent = '⏸ Pause';
+            startSlideshow();
+        }} else {{
+            btn.textContent = '▶ Play';
+            stopSlideshow();
+        }}
+    }}
+
+    function startSlideshow() {{
+        if (slideshowInterval) clearInterval(slideshowInterval);
+        if (progressInterval) clearInterval(progressInterval);
+    
+        let elapsed = 0;
+        progressInterval = setInterval(() => {{
+            elapsed += PROGRESS_UPDATE_INTERVAL;
+            const progress = (elapsed / SLIDE_DURATION) * 100;
+            document.getElementById('progress_fill').style.width = progress + '%';
+            if (elapsed >= SLIDE_DURATION) elapsed = 0;
+        }}, PROGRESS_UPDATE_INTERVAL);
+    
+        slideshowInterval = setInterval(() => {{
+            const nextIndex = (currentPeriodIndex + 1) % periods.length;
+            showPeriod(nextIndex, false); // <-- do NOT pause when autoplay advances
+        }}, SLIDE_DURATION);
+    }}
+
+    function stopSlideshow() {{
+        if (slideshowInterval) clearInterval(slideshowInterval);
+        if (progressInterval) clearInterval(progressInterval);
+        slideshowInterval = null;
+        progressInterval = null;
+    }}
+
+    function resetProgress() {{
+        document.getElementById('progress_fill').style.width = '0%';
+    }}
+
+    function switchMode(newMode) {{
+        currentMode = newMode;
+    
+        ['primary', 'country_count', 'record_count'].forEach(m => {{
+            const btn = document.getElementById(`btn_${{m}}`);
+            btn.classList.toggle('active', m === newMode);
+        }});
+    
+        updateFigure(currentPeriodIndex);
+    
+        showToast(`Switched to ${{newMode.replace('_', ' ')}} mode`);
+    }}
+    
+    function switchColorscale(newColorscale) {{
+        currentColorscale = newColorscale;
+    
+        ['default', 'neon'].forEach(c => {{
+            const btn = document.getElementById(`btn_${{c}}`);
+            btn.classList.toggle('active', c === newColorscale);
+        }});
+    
+        updateFigure(currentPeriodIndex);
+    
+        showToast(`Switched to ${{newColorscale}} colorscale`);
+    }}
+    
+    function toggleOverlays() {{
+        overlaysEnabled = !overlaysEnabled;
+    
+        const b = document.getElementById('btn_overlays');
+        if (b) b.classList.toggle('active', overlaysEnabled);
+    
+        // only active slide
+        const gd = document.getElementById(`ipmap_figure_${{currentPeriodIndex}}`);
+        const bd = buttonDataArray[currentPeriodIndex];
+        if (gd && bd && window.Plotly) {{
+            Plotly.relayout(gd, {{
+                shapes: overlaysEnabled ? (bd.overlay_shapes || []) : [],
+                annotations: overlaysEnabled ? (bd.overlay_annotations || []) : []
+            }});
+        }}
+    
+        showToast(overlaysEnabled ? "Overlays enabled" : "Overlays disabled");
+    }}
+    
+    function updateFigure(index) {{
+        const gd = document.getElementById(`ipmap_figure_${{index}}`);
+        if (!gd || !window.Plotly) return;
+    
+        const bd = buttonDataArray[index];
+        if (!bd) return;
+    
+        const update = {{}};
+    
+        if (currentMode === 'primary') {{
+            update.z = [bd.z_primary];
+    
+            update.colorscale = [currentColorscale === 'neon'
+                ? bd.primary_colorscale_neon
+                : bd.primary_colorscale_default];
+    
+            update.zmin = [0];
+            update.zmax = [Math.max(
+                bd.org_code_map ? Math.max(...Object.values(bd.org_code_map)) : 0,
+                1
+            )];
+    
+            update.hovertemplate = [bd.hover_primary];
+    
+        }} else if (currentMode === 'country_count') {{
+            update.z = [bd.z_country];
+    
+            // Same colorscale as consolidated template
+            update.colorscale = [[[0.0, "#f7fbff"], [0.29, "#f7fbff"], [0.30, "#6baed6"], [0.50, "#6baed6"], [0.51, "#b30000"], [1.0, "#b30000"]]];
+    
+            update.zmin = [0];
+            update.zmax = [Math.max(Math.min(bd.max_country || 10, 10), 1)];
+    
+            update.hovertemplate = [bd.hover_country];
+    
+        }} else {{ // record_count
+            update.z = [bd.z_records];
+    
+            // Same colorscale as consolidated template
+            update.colorscale = [[[0.0, "#08519c"], [0.25, "#3182bd"], [0.50, "#6baed6"], [0.75, "#bdd7e7"], [1.0, "#eff3ff"]]];
+    
+            update.zmin = [0];
+            update.zmax = [Math.max(bd.max_records || 1, 1)];
+    
+            update.hovertemplate = [bd.hover_records];
+        }}
+    
+        Plotly.restyle(gd, update, [0]);
+    
+        // Re-apply overlay state after restyle
+        Plotly.relayout(gd, {{
+            shapes: overlaysEnabled ? (bd.overlay_shapes || []) : [],
+            annotations: overlaysEnabled ? (bd.overlay_annotations || []) : []
+        }});
+    }}
+
+
+    function showToast(message) {{
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => {{
+            toast.classList.remove('show');
+        }}, 2000);
+    }}
+
+    // Initialize slideshow on load
+    window.addEventListener('load', () => {{
+        startSlideshow();
+
+        // Trigger resize for all figures
+        setTimeout(() => {{
+            periods.forEach((_, index) => {{
+                const divId = `ipmap_figure_${{index}}`;
+                const gd = document.getElementById(divId);
+                if (gd && window.Plotly) {{
+                    Plotly.Plots.resize(gd);
+                }}
+            }});
+            updateFigure(0); // ensure first slide matches buttons
+        }}, 500);
+    }});
+    </script>
+</body>
+</html>"""
+
+    # Write HTML with compression
+    _write_html_with_compression(html, out_path, compress=True)

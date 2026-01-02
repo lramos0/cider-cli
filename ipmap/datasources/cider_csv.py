@@ -42,6 +42,7 @@ class CiderCsvSource(DataSource):
             org_col: str = "countryCode",
             explode_org: bool = False,
             source_name: str = "Cider",
+            date_col: Optional[str] = None,
     ) -> None:
         super().__init__(source_name=source_name, snapshot_date=snapshot_date)
         self.path = Path(path)
@@ -49,14 +50,16 @@ class CiderCsvSource(DataSource):
         self.ip_list_cols = tuple(ip_list_cols)
         self.org_col = org_col
         self.explode_org = explode_org
+        self.date_col = date_col
 
         log.debug(
-            "Initialized CiderCsvSource: path=%s ip_col=%s ip_list_cols=%s org_col=%s explode_org=%s",
+            "Initialized CiderCsvSource: path=%s ip_col=%s ip_list_cols=%s org_col=%s explode_org=%s date_col=%s",
             self.path,
             self.ip_col,
             self.ip_list_cols,
             self.org_col,
             self.explode_org,
+            self.date_col,
         )
 
     def _parse_json_or_split_list(self, raw: object) -> list[str]:
@@ -160,6 +163,25 @@ class CiderCsvSource(DataSource):
                 self.org_col,
             )
 
+        # Auto-detect date column if not explicitly provided
+        date_col_to_use = self.date_col
+        if date_col_to_use is None:
+            # Try common date column names
+            date_candidates = ['date', 'ingestDate', 'timestamp', 'dt', 'ds', 'month', 'year']
+            for candidate in date_candidates:
+                if candidate in df.columns:
+                    date_col_to_use = candidate
+                    log.info(f"Auto-detected date column: {date_col_to_use}")
+                    break
+
+        has_date = date_col_to_use and date_col_to_use in df.columns
+        if not has_date and date_col_to_use:
+            log.warning(
+                "Cider CSV %s has no %r column; record_date will be None",
+                self.path,
+                date_col_to_use,
+            )
+
         total = len(df)
         emitted = 0
 
@@ -185,6 +207,13 @@ class CiderCsvSource(DataSource):
 
             org_values = self._parse_org_values(row, has_org=has_org)
 
+            # Extract date value if available
+            record_date = None
+            if has_date:
+                date_raw = row.get(date_col_to_use)
+                if date_raw is not None and not pd.isna(date_raw):
+                    record_date = str(date_raw).strip()
+
             for ip in ips:
                 for org in org_values:
                     emitted += 1
@@ -194,6 +223,7 @@ class CiderCsvSource(DataSource):
                         source=self.source_name,
                         org=org,
                         snapshot_date=self.snapshot_date,
+                        record_date=record_date,
                     )
 
         log.info(
